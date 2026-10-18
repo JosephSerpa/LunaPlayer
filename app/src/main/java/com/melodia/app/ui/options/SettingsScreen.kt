@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.melodia.app.audio.EqSettings
 import com.melodia.app.ui.components.pressable
+import com.melodia.app.ui.components.KofiColor
+import com.melodia.app.ui.components.KofiIcon
+import com.melodia.app.ui.components.openKofi
 import com.melodia.app.ui.theme.inverse
 import com.melodia.app.ui.theme.ink
 import androidx.compose.ui.text.style.TextAlign
@@ -71,6 +74,17 @@ fun SettingsScreen(
             onClick = onOpenServer
         )
 
+        // --- Apoyar el proyecto ---
+        SettingsSectionLabel(Str.get(R.string.support_title))
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        SettingsLink(
+            icon = KofiIcon,
+            title = Str.get(R.string.kofi_title),
+            subtitle = "ko-fi.com/raizzon",
+            onClick = { openKofi(ctx) },
+            iconTint = KofiColor
+        )
+
         // --- Idioma ---
         SettingsSectionLabel(Str.get(R.string.lang_title), help = Str.get(R.string.lang_help))
         SettingsCard {
@@ -103,7 +117,7 @@ fun SettingsScreen(
         // --- Acerca de ---
         SettingsSectionLabel(Str.get(R.string.about))
         SettingsCard {
-            Text("Luna player 1.9.4", style = MaterialTheme.typography.titleMedium)
+            Text("Luna player 1.9.9", style = MaterialTheme.typography.titleMedium)
             Text(
                 Str.plural(R.plurals.about_phone_songs, library.songs.size - library.serverSongs) +
                         if (library.serverSongs > 0) Str.get(R.string.about_server_part, library.serverSongs) else "",

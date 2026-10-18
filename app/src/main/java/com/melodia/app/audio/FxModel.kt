@@ -22,34 +22,33 @@ data class FxSettings(
     val roomSize: Float = 0.6f,
     val damping: Float = 0.5f,
     val preset: String = "Normal",
+    /** Efecto encendido. Apagado conserva los valores pero suena normal (botón agujero negro). */
+    val enabled: Boolean = false,
     /** Off vocal: quitar la voz en tiempo real y con qué intensidad (0..1). */
     val vocalOff: Boolean = false,
     val vocalAmount: Float = 0.8f
 ) {
+    /** Lo que realmente se aplica: con el efecto apagado, todo neutro. */
+    val effSpeed: Float get() = if (enabled) speed else 1f
     /** Factor de tono para Media3 (2^(semitonos/12)). */
-    val pitchFactor: Float get() = 2f.pow(pitchSt / 12f)
+    val pitchFactor: Float get() = if (enabled) 2f.pow(pitchSt / 12f) else 1f
+    val effReverbMix: Float get() = if (enabled) reverbMix else 0f
     val isNeutral: Boolean
         get() = speed == 1f && pitchSt == 0f && reverbMix == 0f
 }
 
-data class FxPreset(val name: String, val settings: FxSettings)
-
-val FX_PRESETS = listOf(
-    FxPreset("Normal", FxSettings()),
-    // Lento y más grave, con mucha sala: el clásico "slowed + reverb".
-    FxPreset("Slowed + Reverb", FxSettings(0.85f, -2.8f, 0.45f, 0.82f, 0.45f, "Slowed + Reverb")),
-    FxPreset("Muy lento", FxSettings(0.75f, -5f, 0.55f, 0.9f, 0.55f, "Muy lento")),
-    FxPreset("Sala", FxSettings(1f, 0f, 0.3f, 0.6f, 0.4f, "Sala")),
-    FxPreset("Nightcore", FxSettings(1.25f, 3.9f, 0.12f, 0.45f, 0.3f, "Nightcore"))
+/** Ajuste de slow + reverb guardado por el usuario (solo existen los que él crea). */
+data class FxProfile(
+    val name: String,
+    val speed: Float,
+    val pitchSt: Float,
+    val reverbMix: Float,
+    val roomSize: Float,
+    val damping: Float
 )
 
-/** Los nombres de los ajustes se guardan en español (son la "clave"); aquí se traducen al mostrarlos. */
+/** Los ajustes del usuario se muestran tal cual; solo "Personalizado" (nombre interno) se traduce. */
 fun fxPresetLabel(key: String): String = when (key) {
-    "Normal" -> Str.get(R.string.fxp_normal)
-    "Slowed + Reverb" -> Str.get(R.string.fxp_slowed)
-    "Muy lento" -> Str.get(R.string.fxp_very_slow)
-    "Sala" -> Str.get(R.string.fxp_room)
-    "Nightcore" -> Str.get(R.string.fxp_nightcore)
     "Personalizado" -> Str.get(R.string.eqp_custom)
     else -> key
 }

@@ -90,7 +90,8 @@ fun SettingsLink(
     title: String,
     subtitle: String,
     onClick: () -> Unit,
-    statusColor: Color? = null
+    statusColor: Color? = null,
+    iconTint: Color? = null
 ) {
     val accent = accentColor
     Row(
@@ -106,7 +107,7 @@ fun SettingsLink(
             Modifier.size(44.dp).glass(RoundedCornerShape(14.dp), fill = 0.1f, border = 0.1f),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = accent)
+            Icon(icon, null, tint = iconTint ?: accent)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
