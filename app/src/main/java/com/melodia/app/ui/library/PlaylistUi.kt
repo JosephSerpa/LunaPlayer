@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -26,6 +28,12 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,12 +58,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.melodia.app.data.Playlist
 import com.melodia.app.data.Song
+import com.melodia.app.data.SongMark
 import com.melodia.app.ui.components.Artwork
+import com.melodia.app.ui.components.CollectionTarget
 import com.melodia.app.ui.components.StaggeredItem
 import com.melodia.app.ui.components.accentColor
 import com.melodia.app.ui.components.glass
 import com.melodia.app.ui.components.onAccent
 import com.melodia.app.ui.components.pressable
+import com.melodia.app.ui.components.pressableWithLongClick
+import com.melodia.app.ui.components.LocalCollectionMenu
 import com.melodia.app.ui.theme.LocalPalette
 import com.melodia.app.ui.theme.ink
 
@@ -73,6 +85,7 @@ fun PlaylistList(
     bottomPadding: androidx.compose.ui.unit.Dp
 ) {
     val accent = accentColor
+    val collectionMenu = LocalCollectionMenu.current
     LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = bottomPadding)) {
         item(key = "new") {
             Row(
@@ -97,7 +110,11 @@ fun PlaylistList(
                     Modifier
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .fillMaxWidth()
-                        .pressable { onOpen(p.id) }
+                        .pressableWithLongClick(
+                            collectionMenu?.let { m ->
+                                { m(CollectionTarget(p.name, Str.plural(R.plurals.songs_count, songs.size), songs.firstOrNull()?.artUri, songs)) }
+                            }
+                        ) { onOpen(p.id) }
                         .glass(RoundedCornerShape(22.dp), fill = 0.07f, border = 0.08f)
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -157,6 +174,11 @@ fun SongMenuDialog(
     playlists: List<Playlist>,
     /** Si se abrió desde una lista, se ofrece quitarla de ella. */
     inPlaylist: Playlist?,
+    mark: SongMark,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onToggleLike: () -> Unit,
+    onRate: (Int) -> Unit,
     onAddTo: (Long) -> Unit,
     onCreateWith: (String) -> Unit,
     onRemoveFromPlaylist: () -> Unit,
@@ -185,7 +207,33 @@ fun SongMenuDialog(
                 )
             }
         }
-        Spacer(Modifier.padding(top = 14.dp))
+        Spacer(Modifier.padding(top = 10.dp))
+
+        MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, Str.get(R.string.play_next)) { onPlayNext(); onDismiss() }
+        MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, Str.get(R.string.add_to_queue)) { onAddToQueue(); onDismiss() }
+        MenuRow(
+            if (mark.liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            Str.get(if (mark.liked) R.string.menu_unlike else R.string.menu_like)
+        ) { onToggleLike(); onDismiss() }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                Str.get(R.string.menu_rate),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+            for (i in 1..5) {
+                val on = i <= mark.rating
+                Icon(
+                    if (on) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    Str.plural(R.plurals.stars_count, i),
+                    tint = if (on) accentColor else ink.copy(alpha = 0.5f),
+                    modifier = Modifier.size(36.dp).pressable { onRate(i) }.padding(5.dp)
+                )
+            }
+        }
 
         if (inPlaylist != null) {
             MenuRow(Icons.Rounded.RemoveCircleOutline, Str.get(R.string.remove_from, inPlaylist.name)) {
@@ -202,14 +250,70 @@ fun SongMenuDialog(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp)
             )
-            LazyColumn(Modifier.heightIn(max = 280.dp)) {
-                items(others, key = { it.id }) { p ->
+            Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                for (p in others) {
                     val already = song.id in p.songIds
                     MenuRow(
                         Icons.AutoMirrored.Rounded.PlaylistAdd,
                         if (already) "${p.name}  ✓" else p.name,
                         enabled = !already
                     ) { onAddTo(p.id); onDismiss() }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CollectionMenuDialog(
+    target: CollectionTarget,
+    playlists: List<Playlist>,
+    onPlay: (shuffle: Boolean) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAddTo: (Long) -> Unit,
+    onCreateWith: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var creating by remember { mutableStateOf(false) }
+    if (creating) {
+        PlaylistNameDialog(
+            title = Str.get(R.string.new_playlist),
+            initial = target.title,
+            confirm = Str.get(R.string.create_and_add),
+            onConfirm = { onCreateWith(it); onDismiss() },
+            onDismiss = { creating = false }
+        )
+        return
+    }
+    DialogCard(onDismiss) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Artwork(target.artUri, 48.dp, cornerRadius = 14.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(target.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    target.subtitle, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.padding(top = 10.dp))
+        MenuRow(Icons.Rounded.PlayArrow, Str.get(R.string.menu_play)) { onPlay(false); onDismiss() }
+        MenuRow(Icons.Rounded.Shuffle, Str.get(R.string.menu_shuffle)) { onPlay(true); onDismiss() }
+        MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, Str.get(R.string.play_next)) { onPlayNext(); onDismiss() }
+        MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, Str.get(R.string.add_to_queue)) { onAddToQueue(); onDismiss() }
+        MenuRow(Icons.Rounded.Add, Str.get(R.string.new_playlist)) { creating = true }
+        if (playlists.isNotEmpty()) {
+            Text(
+                Str.get(R.string.menu_add_all_to).uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp)
+            )
+            Column(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                for (p in playlists) {
+                    MenuRow(Icons.AutoMirrored.Rounded.PlaylistAdd, p.name) { onAddTo(p.id); onDismiss() }
                 }
             }
         }
@@ -311,6 +415,7 @@ private fun DialogCard(onDismiss: () -> Unit, content: @Composable () -> Unit) {
                 .shadow(24.dp, shape)
                 .background(palette.bg.copy(alpha = 0.96f), shape)
                 .glass(shape, fill = 0.05f, border = 0.14f)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) { content() }
     }

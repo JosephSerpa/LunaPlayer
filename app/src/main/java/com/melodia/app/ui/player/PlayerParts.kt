@@ -128,6 +128,8 @@ import com.melodia.app.ui.components.rememberLoadedUri
 import com.melodia.app.ui.components.glass
 import com.melodia.app.ui.components.onAccent
 import com.melodia.app.ui.components.pressable
+import com.melodia.app.ui.components.BlackHoleIcon
+import com.melodia.app.ui.components.pressableWithLongClick
 import com.melodia.app.ui.theme.LocalPalette
 import com.melodia.app.ui.theme.ink
 import com.melodia.app.ui.theme.inverse
@@ -254,6 +256,7 @@ internal fun MarkRow(
     onToggleLike: () -> Unit,
     onRate: (Int) -> Unit,
     onOpenFx: () -> Unit,
+    onToggleFx: () -> Unit,
     onAddToPlaylist: () -> Unit
 ) {
     val accent = accentColor
@@ -348,21 +351,28 @@ internal fun MarkRow(
 
         Spacer(Modifier.width(6.dp))
 
-        // Botón del panel Slow + Reverb.
+        // Agujero negro: tocar enciende/apaga Slow + Reverb; mantener presionado abre su menú.
+        val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
         Box(
             Modifier
                 .size(44.dp)
-                .pressable(onOpenFx)
+                .pressableWithLongClick(
+                    onLongClick = {
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onOpenFx()
+                    },
+                    onClick = onToggleFx
+                )
                 .then(
                     if (fxActive) Modifier.background(accent, CircleShape)
                     else Modifier.glass(CircleShape, fill = 0.08f)
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                Icons.Rounded.Tune, "Slow + Reverb",
+            BlackHoleIcon(
+                active = fxActive,
                 tint = if (fxActive) accent.onAccent() else ink,
-                modifier = Modifier.size(22.dp)
+                size = 28.dp
             )
         }
     }

@@ -59,6 +59,9 @@ import com.melodia.app.ui.components.SongRow
 import com.melodia.app.ui.components.StaggeredItem
 import com.melodia.app.ui.components.glass
 import com.melodia.app.ui.components.pressable
+import com.melodia.app.ui.components.pressableWithLongClick
+import com.melodia.app.ui.components.CollectionTarget
+import com.melodia.app.ui.components.LocalCollectionMenu
 import com.melodia.app.ui.theme.ink
 
 /** Pantalla de detalle reutilizada para artistas y álbumes. */
@@ -200,7 +203,14 @@ fun DetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(albums, key = { it.id }) { album ->
-                        Column(Modifier.width(140.dp).pressable { onAlbum(album.id) }) {
+                        val collectionMenu = LocalCollectionMenu.current
+                        Column(
+                            Modifier.width(140.dp).pressableWithLongClick(
+                                collectionMenu?.let { m ->
+                                    { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs)) }
+                                }
+                            ) { onAlbum(album.id) }
+                        ) {
                             Artwork(album.artUri, 140.dp, cornerRadius = 24.dp)
                             Spacer(Modifier.height(8.dp))
                             Text(

@@ -75,7 +75,6 @@ import com.melodia.app.audio.GRAPH_MAX_HZ
 import com.melodia.app.audio.GRAPH_MIN_HZ
 import com.melodia.app.audio.EQ_MAX_DB
 import com.melodia.app.audio.EQ_MIN_DB
-import com.melodia.app.audio.EQ_PRESETS
 import com.melodia.app.audio.EqSettings
 import com.melodia.app.audio.presetLabel
 import com.melodia.app.audio.EqualizerEngine
@@ -440,13 +439,6 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
             onDismissRequest = { menuOpen = false },
             modifier = Modifier.background(palette.bg.copy(alpha = 0.97f))
         ) {
-            MenuLabel(Str.get(R.string.eq_presets_label))
-            EQ_PRESETS.forEach { preset ->
-                DropdownMenuItem(
-                    text = { ProfileText(preset.name, settings.preset == preset.name) },
-                    onClick = { eq.applyPreset(preset); menuOpen = false }
-                )
-            }
             if (profiles.isNotEmpty()) {
                 MenuLabel(Str.get(R.string.eq_my_profiles))
                 profiles.forEach { p ->
@@ -463,6 +455,7 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
                     )
                 }
             }
+            if (profiles.isEmpty()) MenuLabel(Str.get(R.string.eq_no_profiles))
             HorizontalDivider(color = ink.copy(alpha = 0.1f))
             DropdownMenuItem(
                 text = { Text(Str.get(R.string.eq_save_current), color = accent) },
@@ -475,7 +468,7 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
     if (naming) {
         PlaylistNameDialog(
             title = Str.get(R.string.eq_save_profile),
-            initial = if (settings.preset in EQ_PRESETS.map { it.name }) "" else settings.preset,
+            initial = if (profiles.none { it.preset == settings.preset }) "" else settings.preset,
             confirm = Str.get(R.string.save),
             onConfirm = { eq.saveProfile(it) },
             onDismiss = { naming = false }

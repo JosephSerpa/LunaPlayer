@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,14 +32,18 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.melodia.app.audio.EffectsEngine
-import com.melodia.app.audio.FX_PRESETS
-import com.melodia.app.audio.fxPresetLabel
+import com.melodia.app.audio.FxProfile
 import com.melodia.app.audio.FxSettings
 import com.melodia.app.audio.PITCH_MAX_ST
 import com.melodia.app.audio.PITCH_MIN_ST
@@ -49,6 +54,8 @@ import com.melodia.app.ui.components.accentColor
 import com.melodia.app.ui.components.glass
 import com.melodia.app.ui.components.onAccent
 import com.melodia.app.ui.components.pressable
+import com.melodia.app.ui.components.pressableWithLongClick
+import com.melodia.app.ui.library.PlaylistNameDialog
 import com.melodia.app.ui.theme.LocalPalette
 import com.melodia.app.ui.theme.ink
 import java.util.Locale
@@ -102,15 +109,26 @@ fun FxPanel(
 
         Spacer(Modifier.height(14.dp))
 
+        // Mis ajustes: solo los que el usuario guarda. Tocar aplica; mantener presionado borra.
+        val profiles by effects.profiles.collectAsState()
+        var naming by remember { mutableStateOf(false) }
+        var deleting by remember { mutableStateOf<FxProfile?>(null) }
+        Text(
+            Str.get(R.string.fx_my_settings).uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(FX_PRESETS, key = { it.name }) { preset ->
-                val active = fx.preset == preset.name
+            items(profiles, key = { it.name }) { profile ->
+                val active = fx.enabled && fx.preset == profile.name
                 Text(
-                    fxPresetLabel(preset.name),
+                    profile.name,
                     style = MaterialTheme.typography.labelLarge,
                     color = if (active) onAccent else ink.copy(alpha = 0.85f),
+                    maxLines = 1,
                     modifier = Modifier
-                        .pressable { effects.applyPreset(preset) }
+                        .pressableWithLongClick({ deleting = profile }) { effects.applyProfile(profile) }
                         .background(
                             if (active) accent else ink.copy(alpha = 0.09f),
                             RoundedCornerShape(50)
@@ -118,6 +136,53 @@ fun FxPanel(
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
+            item(key = "save") {
+                Row(
+                    Modifier
+                        .pressable { naming = true }
+                        .background(accent.copy(alpha = 0.14f), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Add, null, tint = accent, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(Str.get(R.string.fx_save), style = MaterialTheme.typography.labelLarge, color = accent, maxLines = 1)
+                }
+            }
+        }
+        if (profiles.isEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                Str.get(R.string.fx_no_saved),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (naming) {
+            PlaylistNameDialog(
+                title = Str.get(R.string.fx_save_title),
+                initial = if (fx.preset == "Normal" || fx.preset == "Personalizado") "" else fx.preset,
+                confirm = Str.get(R.string.save),
+                onConfirm = { effects.saveProfile(it) },
+                onDismiss = { naming = false }
+            )
+        }
+        deleting?.let { p ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { deleting = null },
+                title = { Text(p.name) },
+                text = { Text(Str.get(R.string.fx_delete_q)) },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = { effects.deleteProfile(p.name); deleting = null }) {
+                        Text(Str.get(R.string.delete), color = accent)
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { deleting = null }) {
+                        Text(Str.get(R.string.cancel))
+                    }
+                }
+            )
         }
 
         Spacer(Modifier.height(8.dp))

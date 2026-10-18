@@ -8,3 +8,8 @@
 /captures/
 .externalNativeBuild/
 .cxx/
+
+# Claves de firma: NUNCA subir
+keystore.properties
+*.jks
+*.keystore

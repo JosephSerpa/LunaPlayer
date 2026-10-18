@@ -66,6 +66,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
@@ -179,6 +180,7 @@ fun PlayerScreen(
     onToggleMoon: () -> Unit,
     onToggleLike: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onOpenQueue: () -> Unit,
     onRate: (Int) -> Unit,
     onClose: () -> Unit,
     onPlayPause: () -> Unit,
@@ -312,13 +314,13 @@ fun PlayerScreen(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {}
-                // Arrastrar hacia abajo encoge el reproductor siguiendo el dedo.
+                // Arriba: abre la cola. Abajo: cierra el reproductor. Sigue al dedo.
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { dy ->
-                        onDragProgress(-dy / rootSize.height.coerceAtLeast(1) * 1.4f)
+                        onDragProgress(dy)
                     },
-                    onDragStopped = { v -> onDragRelease(-v / rootSize.height.coerceAtLeast(1)) }
+                    onDragStopped = { v -> onDragRelease(v) }
                 )
         ) {
             Column(
@@ -349,6 +351,7 @@ fun PlayerScreen(
                     ) {
                         Icon(Icons.Rounded.KeyboardArrowDown, Str.get(R.string.close), tint = ink, modifier = Modifier.size(30.dp))
                     }
+                    Spacer(Modifier.width(52.dp))
                     // Botones de 44 dp a cada lado: el texto queda centrado en la pantalla.
                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         Text(
@@ -363,6 +366,19 @@ fun PlayerScreen(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .pressable(onOpenQueue)
+                            .glass(CircleShape, fill = 0.12f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.QueueMusic,
+                            Str.get(R.string.queue), tint = ink
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier
                             .size(44.dp)
@@ -469,7 +485,7 @@ fun PlayerScreen(
                     // --- Me gusta, estrellas y efectos ---
                     MarkRow(
                         mark = mark,
-                        fxActive = !fx.isNeutral,
+                        fxActive = fx.enabled,
                         moonOn = moonMode,
                         onToggleMoon = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -484,6 +500,7 @@ fun PlayerScreen(
                             onRate(it)
                         },
                         onOpenFx = { panel = 1 },
+                        onToggleFx = { effects.toggle() },
                         onAddToPlaylist = onAddToPlaylist
                     )
 

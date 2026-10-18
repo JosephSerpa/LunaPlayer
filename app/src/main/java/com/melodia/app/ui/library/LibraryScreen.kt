@@ -79,6 +79,12 @@ import com.melodia.app.ui.components.SongRow
 import com.melodia.app.ui.components.StaggeredItem
 import com.melodia.app.ui.components.glass
 import com.melodia.app.ui.components.pressable
+import com.melodia.app.ui.components.KofiColor
+import com.melodia.app.ui.components.KofiIcon
+import com.melodia.app.ui.components.openKofi
+import com.melodia.app.ui.components.pressableWithLongClick
+import com.melodia.app.ui.components.CollectionTarget
+import com.melodia.app.ui.components.LocalCollectionMenu
 import com.melodia.app.ui.theme.ink
 import com.melodia.app.ui.theme.inverse
 import kotlinx.coroutines.launch
@@ -154,9 +160,23 @@ fun LibraryScreen(
     val pagerState = rememberPagerState(initialPage = 0) { tabs().size }
     val scope = rememberCoroutineScope()
 
+    val appContext = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        // Ko-fi: arriba a la izquierda.
         Row(
-            Modifier.padding(start = 24.dp, end = 20.dp, top = 18.dp),
+            Modifier
+                .padding(start = 20.dp, top = 10.dp)
+                .pressable { openKofi(appContext) }
+                .glass(RoundedCornerShape(50), fill = 0.10f, border = 0.16f)
+                .padding(start = 10.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(KofiIcon, Str.get(R.string.kofi_cd), tint = KofiColor, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Ko-fi", style = MaterialTheme.typography.labelLarge, color = ink)
+        }
+        Row(
+            Modifier.padding(start = 24.dp, end = 20.dp, top = 6.dp),
             verticalAlignment = Alignment.Top
         ) {
             Column(Modifier.weight(1f)) {
@@ -406,6 +426,7 @@ private fun FitArtwork(
 @Composable
 private fun ArtistGrid(artists: List<Artist>, onArtist: (String) -> Unit) {
     if (artists.isEmpty()) return EmptyMessage(Str.get(R.string.no_results))
+    val collectionMenu = LocalCollectionMenu.current
     val accent = accentColor
     val ringFade = ink.copy(alpha = 0.06f)
     val ringStrong = ink.copy(alpha = 0.35f)
@@ -418,7 +439,11 @@ private fun ArtistGrid(artists: List<Artist>, onArtist: (String) -> Unit) {
         itemsIndexed(artists, key = { _, a -> a.name }) { index, artist ->
             StaggeredItem(index) {
                 Column(
-                    Modifier.fillMaxWidth().pressable { onArtist(artist.name) },
+                    Modifier.fillMaxWidth().pressableWithLongClick(
+                        collectionMenu?.let { m ->
+                            { m(CollectionTarget(artist.name, Str.plural(R.plurals.songs_count, artist.songs.size), artist.artUri, artist.songs)) }
+                        }
+                    ) { onArtist(artist.name) },
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
@@ -461,6 +486,7 @@ private fun AlbumGrid(
 ) {
     if (albums.isEmpty()) return EmptyMessage(Str.get(R.string.no_results))
     val accent = accentColor
+    val collectionMenu = LocalCollectionMenu.current
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = listBottomPadding),
@@ -473,7 +499,11 @@ private fun AlbumGrid(
                 Column(
                     Modifier
                         .padding(top = if (index % 2 == 1) 26.dp else 0.dp)
-                        .pressable { onAlbum(album.id) }
+                        .pressableWithLongClick(
+                            collectionMenu?.let { m ->
+                                { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs)) }
+                            }
+                        ) { onAlbum(album.id) }
                 ) {
                     Box {
                         FitArtwork(album.artUri, cornerRadius = 26.dp)
@@ -569,14 +599,38 @@ private fun FolderList(
     if (folders.isEmpty()) return EmptyMessage(Str.get(R.string.no_results))
     val accent = accentColor
     val shape = RoundedCornerShape(22.dp)
+    val collectionMenu = LocalCollectionMenu.current
+    // Carpetas del teléfono y de la nube (servidor) por separado.
+    val (cloudFolders, localFolders) = remember(folders) { folders.partition { f -> f.songs.any { it.isRemote } } }
+    val sections = remember(cloudFolders, localFolders) {
+        buildList {
+            if (localFolders.isNotEmpty()) add(R.string.folders_local to localFolders)
+            if (cloudFolders.isNotEmpty()) add(R.string.folders_cloud to cloudFolders)
+        }
+    }
     LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = listBottomPadding)) {
-        itemsIndexed(folders, key = { _, f -> f.id }) { index, folder ->
+      sections.forEach { (titleRes, list) ->
+        if (sections.size > 1) {
+            item(key = "header$titleRes") {
+                Text(
+                    Str.get(titleRes).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 26.dp, top = 12.dp, bottom = 4.dp)
+                )
+            }
+        }
+        itemsIndexed(list, key = { _, f -> f.id }) { index, folder ->
             StaggeredItem(index) {
                 Row(
                     Modifier
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                         .fillMaxWidth()
-                        .pressable { onFolder(folder.id) }
+                        .pressableWithLongClick(
+                            collectionMenu?.let { m ->
+                                { m(CollectionTarget(folder.name, folder.displayPath, folder.artUri, folder.songs)) }
+                            }
+                        ) { onFolder(folder.id) }
                         .glass(shape, fill = 0.07f, border = 0.08f)
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -622,5 +676,6 @@ private fun FolderList(
                 }
             }
         }
+      }
     }
 }

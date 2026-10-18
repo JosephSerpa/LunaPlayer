@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,18 +8,38 @@ plugins {
 
 android {
     namespace = "com.melodia.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.melodia.app"
+        applicationId = "com.lunaplayer.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 14
-        versionName = "1.9.4"
+        targetSdk = 36
+        versionCode = 104
+        versionName = "1.9.9"
+    }
+
+    // Firma de producción: lee keystore.properties (no se sube a Git). Sin ese archivo,
+    // la compilación release sale sin firmar y el proyecto sigue compilando en cualquier equipo.
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val hasReleaseKey = keystoreProps.getProperty("storeFile") != null
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

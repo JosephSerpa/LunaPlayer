@@ -20,7 +20,7 @@ Minimalista, oscuro y con el fondo hecho de la carátula que suena.
 ## ✨ Características
 
 ### Biblioteca
-- Pestañas: **Álbumes · Artistas · Canciones · Listas · Me gusta · Carpetas**, con búsqueda en vivo.
+- Pestañas: **Álbumes · Artistas · Canciones · Listas · Me gusta · Carpetas** (teléfono y nube por separado), con búsqueda en vivo.
 - **Listas de reproducción**: crear, renombrar, eliminar; añadir con pulsación larga o desde el reproductor.
 - **♥ Me gusta** y **1–5 estrellas** por canción, con filtro por estrellas.
 - **Arranque instantáneo**: la biblioteca (también la del servidor) va en caché y se refresca en segundo plano.
@@ -31,13 +31,15 @@ Minimalista, oscuro y con el fondo hecho de la carátula que suena.
 - Línea de tiempo con el **espectro real** de la canción (graves / medios / agudos). Toca o arrastra para saltar.
 - Info técnica de la pista: **formato · kbps · kHz**.
 - **Desliza para cambiar de canción**; mini-reproductor flotante.
+- **Cola de reproducción** editable (arrastra para reordenar, «reproducir a continuación»), abierta deslizando hacia arriba, con animación fluida.
+- **Aleatorio real**: empieza en una canción al azar y la cola coincide con el orden de reproducción. Precarga de las siguientes carátulas.
 - **Mejor parte 🌙**: marca el momento favorito de cada canción (un toque va a él; pulsación larga lo mueve a la posición actual). Con el **modo luna** activado, cada canción nueva empieza directamente en su mejor parte.
 - Segundo plano con notificación, pantalla de bloqueo y Bluetooth (`MediaSessionService`), pausa al desconectar auriculares y manejo de *audio focus*.
 
 ### Sonido
-- **Ecualizador paramétrico** de **0 a 7 curvas** (campana, tonos bajo/alto, pasos, muesca) con frecuencia, ganancia (±20 dB) y Q ajustables, curva en vivo y perfiles propios.
+- **Ecualizador paramétrico** de **0 a 7 curvas** (campana, tonos bajo/alto, pasos, muesca) con frecuencia, ganancia (±20 dB) y Q ajustables, curva en vivo y perfiles que guardas tú.
 - **Ganancia general** como barra vertical (±20 dB) junto a la gráfica; los colores **avisan en rojo** cuando se exige tanto que el sonido puede saturarse.
-- **Slow + Reverb**: velocidad, tono y reverberación en tiempo real, con presets (Slowed + Reverb, Muy lento, Sala, Nightcore…).
+- **Slow + Reverb** (botón de agujero negro 🕳️: toque = activar/desactivar, pulsación larga = ajustes): velocidad, tono y reverberación en tiempo real, con tus propios ajustes guardados.
 - **Off vocal**: reduce la voz principal en tiempo real, con intensidad ajustable.
 
 ### Servidor
@@ -59,7 +61,7 @@ Minimalista, oscuro y con el fondo hecho de la carátula que suena.
 | Audio | AndroidX **Media3** (ExoPlayer + MediaSession) con procesadores de audio propios (ecualizador, reverb, quitar voz) |
 | Imágenes | Coil |
 | Mínimo | Android 8.0 (API 26) |
-| Build | Gradle (Kotlin DSL), AGP 8.5 |
+| Build | Gradle (Kotlin DSL), AGP 8.9, compileSdk/targetSdk 36 |
 
 Los filtros del ecualizador son *biquads* (RBJ cookbook) aplicados directamente sobre el audio PCM; la misma matemática dibuja la gráfica.
 
@@ -68,7 +70,7 @@ Los filtros del ecualizador son *biquads* (RBJ cookbook) aplicados directamente 
 1. Instala **Android Studio** (Koala o más reciente).
 2. `File ▸ Open` y elige la carpeta del repositorio.
 3. Espera a que Gradle sincronice (descarga las dependencias).
-4. Conecta tu teléfono (depuración USB activada) o crea un emulador con música y pulsa **Run ▶**, o usa `Build ▸ Assemble Project` para generar el APK en `app/build/outputs/apk/debug/app-debug.apk`.
+4. Conecta tu teléfono (depuración USB activada) o crea un emulador con música y pulsa **Run ▶**, o usa `Build ▸ Assemble Project` para generar el APK en `app/build/outputs/apk/debug/app-debug.apk`. Para publicar: `Build ▸ Generate App Bundles` (necesitas tu propio `keystore.properties`, que **no** se sube al repo).
 
 ## 🗂️ Estructura
 
@@ -97,11 +99,20 @@ Los textos viven en `values/strings.xml` (español) y `values-en/strings.xml` (i
 
 ## 📌 Estado
 
-Proyecto personal en desarrollo activo. Versión actual: **1.9.4**. Probado en un Samsung Galaxy S26 Ultra.
+Proyecto personal en desarrollo activo. Versión actual: **1.9.9** (paquete `com.lunaplayer.app`). Probado en un Samsung Galaxy S26 Ultra.
+
+## 🔒 Privacidad y publicación
+
+- [Política de privacidad](PRIVACY.md): la app no recopila ningún dato.
+- [Guía para publicar en Google Play](docs/PLAY_STORE.md).
+
+## ☕ Apoyo
+
+Si te gusta Luna player: https://ko-fi.com/raizzon
 
 ## 🗺️ Ideas pendientes
 
-- Cola editable y temporizador de sueño.
+- Temporizador de sueño.
 - Widget y Android Auto.
 - Más ajustes en la pantalla del reproductor.
 

@@ -86,6 +86,17 @@ val LocalCoverOrigin = staticCompositionLocalOf { CoverOrigin() }
 /** Abre el menú de una canción (añadir a lista…) al mantenerla presionada. */
 val LocalSongMenu = staticCompositionLocalOf<((Song) -> Unit)?> { null }
 
+/** Álbum, artista, carpeta o lista: algo que contiene varias canciones. */
+data class CollectionTarget(
+    val title: String,
+    val subtitle: String,
+    val artUri: Uri?,
+    val songs: List<Song>
+)
+
+/** Abre el menú de un álbum / artista / carpeta / lista al mantenerlo presionado. */
+val LocalCollectionMenu = staticCompositionLocalOf<((CollectionTarget) -> Unit)?> { null }
+
 /** "Me gusta" y estrellas de todas las canciones, por id. */
 val LocalMarks = compositionLocalOf<Map<Long, SongMark>> { emptyMap() }
 

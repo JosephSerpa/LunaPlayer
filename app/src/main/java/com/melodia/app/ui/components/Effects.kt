@@ -108,7 +108,7 @@ private fun colorsFrom(bitmap: Bitmap): ArtColors? {
  * de 40 px) y luego solo se dibujan: así no hay desenfoques en tiempo real en la GPU a cada cuadro.
  */
 object BackdropCache {
-    private val cache = android.util.LruCache<String, ImageBitmap>(16)
+    private val cache = android.util.LruCache<String, ImageBitmap>(24)
     fun get(uri: Uri): ImageBitmap? = cache.get(uri.toString())
     fun put(uri: Uri, image: ImageBitmap) { cache.put(uri.toString(), image) }
 }
@@ -151,24 +151,39 @@ private fun blurPass(src: IntArray, dst: IntArray, n: Int, horizontal: Boolean) 
     }
 }
 
+/** Colores ya calculados de carátulas preparadas (para no repetir el trabajo al volver a una). */
+private object ArtColorsCache {
+    private val cache = android.util.LruCache<String, ArtColors>(32)
+    fun get(uri: Uri): ArtColors? = cache.get(uri.toString())
+    fun put(uri: Uri, colors: ArtColors) { cache.put(uri.toString(), colors) }
+}
+
+/** Como runCatching, pero SIN tragarse la cancelación: una tarea cancelada tiene que parar de verdad. */
+private suspend inline fun <T> attempt(block: () -> T): T? =
+    try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) { null }
+
 /**
  * Prepara todo lo de una carátula ANTES de mostrarla: la descarga/decodifica a los tamaños que se
  * usan, calcula sus colores y su fondo difuminado. Devuelve los colores (o null si no se pudieron).
+ * Si la tarea se cancela (por ejemplo, al saltar rápido de canción) lanza la cancelación: nunca
+ * devuelve un resultado "a medias" que alguien pueda publicar por error.
  */
 suspend fun prepareArt(context: Context, uri: Uri, sizes: List<Int>): ArtColors? {
+    // Ya preparada antes (p. ej. precargada): resultado inmediato.
+    ArtColorsCache.get(uri)?.let { cached ->
+        if (BackdropCache.get(uri) != null) return cached
+    }
     // Primero el tamaño grande (si es de red, se descarga aquí); los demás salen ya de la caché.
     for (px in sizes) {
-        runCatching {
-            context.imageLoader.execute(ImageRequest.Builder(context).data(uri).size(px).build())
-        }
+        attempt { context.imageLoader.execute(ImageRequest.Builder(context).data(uri).size(px).build()) }
     }
-    val bitmap = runCatching {
+    val bitmap = attempt {
         val request = ImageRequest.Builder(context).data(uri).allowHardware(false).size(96).build()
         (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
-    }.getOrNull() ?: return null
+    } ?: return null
     return withContext(Dispatchers.Default) {
         runCatching { BackdropCache.put(uri, makeBackdrop(bitmap)) }
-        runCatching { colorsFrom(bitmap) }.getOrNull()
+        runCatching { colorsFrom(bitmap) }.getOrNull()?.also { ArtColorsCache.put(uri, it) }
     }
 }
 

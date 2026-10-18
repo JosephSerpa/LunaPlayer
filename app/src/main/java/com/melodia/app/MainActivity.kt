@@ -57,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,6 +79,10 @@ import com.melodia.app.ui.components.CoverOrigin
 import com.melodia.app.ui.components.LocalCoverOrigin
 import com.melodia.app.ui.components.LocalMarks
 import com.melodia.app.ui.components.LocalSongMenu
+import com.melodia.app.ui.components.LocalCollectionMenu
+import com.melodia.app.ui.components.CollectionTarget
+import com.melodia.app.ui.library.CollectionMenuDialog
+import com.melodia.app.ui.player.QueueOverlay
 import com.melodia.app.ui.library.PlaylistActions
 import com.melodia.app.ui.library.PlaylistNameDialog
 import com.melodia.app.ui.library.SongMenuDialog
@@ -99,6 +104,7 @@ import com.melodia.app.ui.theme.MelodiaTheme
 import com.melodia.app.ui.theme.ink
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import com.melodia.app.ui.theme.inverse
 
@@ -219,6 +225,11 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
     var menuPlaylist by remember { mutableStateOf<Playlist?>(null) }
     var creatingPlaylist by remember { mutableStateOf(false) }
     val openSongMenu: (Song) -> Unit = { menuSong = it; menuPlaylist = null }
+    var menuCollection by remember { mutableStateOf<CollectionTarget?>(null) }
+    val queue by controller.queue.collectAsStateWithLifecycle()
+    val toast: (Int) -> Unit = { res ->
+        android.widget.Toast.makeText(app, Str.get(res), android.widget.Toast.LENGTH_SHORT).show()
+    }
 
     var query by rememberSaveable { mutableStateOf("") }
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -255,10 +266,29 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
             art = ArtColors()
         } else {
             // Todo se prepara antes de cambiar nada: portada, colores y fondo cambian a la vez.
+            // Si se salta de canción antes de terminar, esta tarea se cancela y NO publica nada
+            // (antes terminaba igual y ponía la carátula de una canción que ya no sonaba).
             val density = context.resources.displayMetrics.density
             val colors = prepareArt(context, trackArt, listOf(1080, (50 * density).toInt()))
+            ensureActive()
             art = colors ?: ArtColors()
             shownArt = trackArt
+        }
+    }
+    // Precarga: las 2 canciones que siguen en la cola ya tienen su carátula y colores listos
+    // cuando llegan (navegación fluida). Espera a que la actual esté lista para no competir con ella.
+    val upcomingArt = remember(queue, player.queueIndex) {
+        listOfNotNull(
+            queue.getOrNull(player.queueIndex + 1)?.artUri,
+            queue.getOrNull(player.queueIndex + 2)?.artUri
+        ).distinct()
+    }
+    LaunchedEffect(upcomingArt, shownArt) {
+        if (shownArt == null || shownArt != trackArt) return@LaunchedEffect
+        kotlinx.coroutines.delay(350)
+        val density = context.resources.displayMetrics.density
+        for (u in upcomingArt) {
+            prepareArt(context, u, listOf(1080, (50 * density).toInt()))
         }
     }
     val artUri = shownArt
@@ -282,23 +312,50 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
     val playerVisible by remember { derivedStateOf { progressAnim.value > 0.001f } }
     val miniVisible by remember { derivedStateOf { progressAnim.value < 0.02f } }
 
-    // Arrastre del reproductor: la transición sigue al dedo.
-    val onDragProgress: (Float) -> Unit = { delta ->
-        dragging = true
-        uiScope.launch { progressAnim.snapTo((progressAnim.value + delta).coerceIn(0f, 1f)) }
-    }
-    val onDragRelease: (Float) -> Unit = { velocity ->
-        dragging = false
-        // Se cierra si se lanzó hacia abajo o si ya bajó más de un tercio.
-        val close = velocity < -1.2f || (progressAnim.value < 0.68f && velocity < 0.8f)
-        if (close) {
-            skipNextEffect[0] = true
-            expanded = false
-        }
+    // Cola de reproducción: 0 = oculta, 1 = abierta (el reproductor queda arriba en miniatura).
+    val queueAnim = remember { Animatable(0f) }
+    val queueSpring = spring<Float>(dampingRatio = 0.9f, stiffness = 260f)
+    val openQueue: () -> Unit = { uiScope.launch { queueAnim.animateTo(1f, queueSpring) } }
+    val closeQueue: () -> Unit = { uiScope.launch { queueAnim.animateTo(0f, queueSpring) } }
+    LaunchedEffect(expanded) { if (!expanded) queueAnim.snapTo(0f) }
+    androidx.activity.compose.BackHandler(enabled = queueAnim.value > 0.02f) { closeQueue() }
+    // Gesto vertical único: hacia arriba abre la cola (el reproductor se encoge arriba como mini),
+    // hacia abajo la cierra y, con la cola cerrada, cierra el reproductor. Todo sigue al dedo.
+    var screenH by remember { mutableStateOf(1f) }
+    var gesture by remember { mutableStateOf(0) } // 0 = ninguno, 1 = cola, 2 = cerrando reproductor
+    val onDragProgress: (Float) -> Unit = { dy ->
+        if (gesture == 0) gesture = if (queueAnim.value > 0.001f || dy < 0f) 1 else 2
+        val g = gesture
         uiScope.launch {
-            progressAnim.animateTo(if (close) 0f else 1f, sheetSpring, initialVelocity = velocity)
+            if (g == 1) {
+                queueAnim.snapTo((queueAnim.value - dy / (screenH * 0.62f)).coerceIn(0f, 1f))
+            } else {
+                dragging = true
+                progressAnim.snapTo((progressAnim.value - dy / (screenH * 0.9f)).coerceIn(0f, 1f))
+            }
         }
     }
+    val onDragRelease: (Float) -> Unit = { vy ->
+        val g = gesture
+        gesture = 0
+        uiScope.launch {
+            if (g == 1) {
+                val v = -vy / (screenH * 0.62f) // progreso por segundo (positivo = abriendo)
+                val open = v > 1.0f || (queueAnim.value > 0.4f && v > -1.0f)
+                queueAnim.animateTo(if (open) 1f else 0f, queueSpring, initialVelocity = v)
+            } else if (g == 2) {
+                if (vy > 1600f || progressAnim.value < 0.75f) {
+                    dragging = false
+                    expanded = false
+                } else {
+                    progressAnim.animateTo(1f, sheetSpring)
+                    dragging = false
+                }
+            }
+        }
+    }
+    val onQueueDelta = onDragProgress
+    val onQueueRelease = onDragRelease
     // Tocar una canción: suena y el reproductor se abre desde su carátula.
     val playSong: (List<Song>, Int) -> Unit = { songs, index ->
         controller.play(songs, index, false)
@@ -310,9 +367,10 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
         LocalShownArt provides shownArt,
         LocalMarks provides marks,
         LocalCoverOrigin provides coverOrigin,
-        LocalSongMenu provides openSongMenu
+        LocalSongMenu provides openSongMenu,
+        LocalCollectionMenu provides { target -> menuCollection = target }
     ) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().onSizeChanged { screenH = it.height.toFloat().coerceAtLeast(1f) }) {
             // Fondo global: la carátula de la canción, muy difuminada.
             AmbientBackground(artUri = artUri, colors = art, isPlaying = player.isPlaying)
 
@@ -523,6 +581,17 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
             if (playerVisible) {
                 val songId = player.current?.mediaId?.toLongOrNull()
                 // Solo este bloque se redibuja con cada cuadro de la animación del reproductor.
+                Box(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        // Al abrir la cola, el reproductor se encoge hacia arriba y se funde en el mini reproductor.
+                        val q = queueAnim.value
+                        alpha = (1f - q * 1.7f).coerceIn(0f, 1f)
+                        val sc = 1f - 0.45f * q
+                        scaleX = sc; scaleY = sc
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.08f)
+                        translationY = -q * size.height * 0.05f
+                    }
+                ) {
                 ProgressHost(progressAnim.asState()) { playerProgress ->
                 PlayerScreen(
                     state = player,
@@ -542,6 +611,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onAddToPlaylist = {
                         library.songs.firstOrNull { it.id == songId }?.let(openSongMenu)
                     },
+                    onOpenQueue = openQueue,
                     onRate = { stars -> songId?.let { app.favorites.setRating(it, stars) } },
                     onClose = { expanded = false },
                     onPlayPause = controller::togglePlayPause,
@@ -574,6 +644,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     }
                 )
                 }
+                }
             }
 
             // --- Menú de canción y nueva lista ---
@@ -582,10 +653,44 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     song = song,
                     playlists = playlists,
                     inPlaylist = menuPlaylist,
+                    mark = marks[song.id] ?: SongMark(),
+                    onPlayNext = { controller.playNext(listOf(song)); toast(R.string.toast_next) },
+                    onAddToQueue = { controller.addToQueue(listOf(song)); toast(R.string.toast_queued) },
+                    onToggleLike = { app.favorites.toggleLike(song.id) },
+                    onRate = { stars -> app.favorites.setRating(song.id, stars) },
                     onAddTo = { pid -> app.playlists.add(pid, listOf(song.id)) },
                     onCreateWith = { name -> app.playlists.create(name, listOf(song.id)) },
                     onRemoveFromPlaylist = { menuPlaylist?.let { app.playlists.remove(it.id, song.id) } },
                     onDismiss = { menuSong = null; menuPlaylist = null }
+                )
+            }
+            menuCollection?.let { target ->
+                CollectionMenuDialog(
+                    target = target,
+                    playlists = playlists,
+                    onPlay = { shuffle ->
+                        controller.play(target.songs, 0, shuffle)
+                    },
+                    onPlayNext = { controller.playNext(target.songs); toast(R.string.toast_next) },
+                    onAddToQueue = { controller.addToQueue(target.songs); toast(R.string.toast_queued) },
+                    onAddTo = { pid -> app.playlists.add(pid, target.songs.map { it.id }) },
+                    onCreateWith = { name -> app.playlists.create(name, target.songs.map { it.id }) },
+                    onDismiss = { menuCollection = null }
+                )
+            }
+            if (queueAnim.value > 0.001f) {
+                QueueOverlay(
+                    progress = queueAnim.asState(),
+                    queue = queue,
+                    state = player,
+                    onJump = controller::skipToQueueItem,
+                    onMove = controller::moveQueueItem,
+                    onRemove = controller::removeQueueItem,
+                    onPlayPause = controller::togglePlayPause,
+                    onNext = controller::next,
+                    onClose = closeQueue,
+                    onProgressDelta = onQueueDelta,
+                    onRelease = onQueueRelease
                 )
             }
             if (creatingPlaylist) {
