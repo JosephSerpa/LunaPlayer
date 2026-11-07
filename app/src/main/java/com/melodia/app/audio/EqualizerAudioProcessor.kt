@@ -31,6 +31,7 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
     private val coeffs = Array(EQ_BANDS) { DoubleArray(5) }
     private val bandActive = BooleanArray(EQ_BANDS)
     private var preamp = 1.0
+    private var limiterOn = true
 
     /** Memoria de cada filtro: [canal][banda][2]. */
     private var state = DoubleArray(0)
@@ -106,7 +107,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
     }
 
     private fun updateCoefficients(s: EqSettings) {
-        preamp = 10.0.pow(s.preampDb / 20.0)
+        preamp = 10.0.pow((s.preampDb + s.boostDb) / 20.0)
+        limiterOn = s.limiter
         for (b in 0 until EQ_BANDS) {
             val band = s.bands.getOrNull(b)
             if (band == null || !EqMath.isActive(band)) {
@@ -140,6 +142,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
 
     /** Limitador suave: evita el "crujido" cuando las subidas de volumen pasan el máximo. */
     private fun softLimit(x: Double): Double {
+        // Limitador apagado: solo se recorta al máximo digital (satura si se pasa).
+        if (!limiterOn) return x.coerceIn(-1.0, 1.0)
         val a = abs(x)
         if (a <= 0.8) return x
         val limited = 0.8 + 0.2 * tanh((a - 0.8) / 0.2)

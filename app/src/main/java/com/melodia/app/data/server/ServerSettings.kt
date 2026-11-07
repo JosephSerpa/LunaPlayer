@@ -30,7 +30,7 @@ class ServerSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("server", Context.MODE_PRIVATE)
 
-    private val _config = MutableStateFlow(load())
+    private val _config = MutableStateFlow(load().also { ServerAuth.update(it) })
     val config: StateFlow<ServerConfig> = _config.asStateFlow()
 
     /** Guarda la conexión. Si [password] está vacío se conserva el token anterior. */
@@ -47,6 +47,7 @@ class ServerSettings(context: Context) {
     fun clear() = store(ServerConfig())
 
     private fun store(c: ServerConfig) {
+        ServerAuth.update(c)
         _config.value = c
         prefs.edit()
             .putString("url", c.url).putString("user", c.user)

@@ -5,9 +5,14 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.offset
+import com.melodia.app.ui.theme.inverse
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,6 +65,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.util.lerp
+import com.melodia.app.ui.components.LocalCoverOrigin
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,6 +107,7 @@ fun QueueOverlay(
     onRemove: (Int) -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onPrevious: () -> Unit = {},
     onClose: () -> Unit,
     /** Arrastre vertical en píxeles (positivo = hacia abajo = cerrando la cola). */
     onProgressDelta: (Float) -> Unit,
@@ -108,7 +121,15 @@ fun QueueOverlay(
     val rowPx = with(density) { RowHeight.toPx() }
     val scope = rememberCoroutineScope()
     var height by remember { mutableFloatStateOf(1f) }
+    val origin = LocalCoverOrigin.current
+    var rootPos by remember { mutableStateOf(Offset.Zero) }
+    // Deslizar la barra superior: izquierda → siguiente; derecha → anterior.
+    val slide = remember { Animatable(0f) }
+    val nextCb by rememberUpdatedState(onNext)
+    val prevCb by rememberUpdatedState(onPrevious)
     val current = state.current
+    // La barra de arriba es "de verdad" solo cuando la que viaja ya llegó (q ≥ 0,96).
+    val barArrived by remember { derivedStateOf { progress.value >= 0.96f } }
     val currentIndex = state.queueIndex
     // Copia local: al soltar una fila el orden cambia al instante (sin esperar al reproductor).
     var items by remember { mutableStateOf(queue) }
@@ -155,35 +176,66 @@ fun QueueOverlay(
         Modifier
             .fillMaxSize()
             .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
+            .onGloballyPositioned { rootPos = it.positionInRoot() }
             .drawBehind { drawRect(palette.bg.copy(alpha = 0.92f * progress.value.coerceIn(0f, 1f))) }
             // Consume los toques para que no lleguen al reproductor que queda debajo.
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
     ) {
+        // La carátula del reproductor viaja hasta la barra de arriba (encima de todo, sin tocar los gestos).
+        Box(Modifier.zIndex(5f)) { QueueCover(progress, state, rootPos) }
+        // La barra de controles del reproductor viaja hasta la barra de arriba (y al revés): es la misma.
+        Box(Modifier.zIndex(4f)) { QueueBarMorph(progress, state, rootPos) }
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             // --- Reproductor en miniatura (arriba). Arrastrarlo hacia arriba cierra la cola. ---
             Row(
                 Modifier
                     .graphicsLayer {
-                        val q = progress.value.coerceIn(0f, 1f)
-                        val k = ((q - 0.25f) / 0.75f).coerceIn(0f, 1f)
-                        alpha = k
-                        translationY = -(1f - q) * 36.dp.toPx()
-                        scaleX = 0.9f + 0.1f * k; scaleY = 0.9f + 0.1f * k
-                        transformOrigin = TransformOrigin(0.5f, 0f)
                     }
                     .padding(horizontal = 14.dp, vertical = 10.dp)
                     .fillMaxWidth()
+                    .onGloballyPositioned { origin.queuePill = it.boundsInRoot() }
+                    .pointerInput(Unit) {
+                        val trigger = 64.dp.toPx()
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragCancel = { scope.launch { slide.animateTo(0f, tween(180)) } },
+                            onDragEnd = {
+                                val t = total
+                                if (t <= -trigger) nextCb() else if (t >= trigger) prevCb()
+                                scope.launch { slide.animateTo(0f, tween(220)) }
+                            }
+                        ) { change, delta ->
+                            change.consume()
+                            total += delta
+                            scope.launch { slide.snapTo((total * 0.45f).coerceIn(-140f, 140f)) }
+                        }
+                    }
                     .draggable(
                         orientation = Orientation.Vertical,
                         state = rememberDraggableState { dy -> onProgressDelta(dy) },
                         onDragStopped = { v -> onRelease(v) }
                     )
-                    .glass(RoundedCornerShape(30.dp), fill = 0.12f, border = 0.16f)
+                    // La barra de vidrio la dibuja la que viaja desde el reproductor hasta que llega.
+                    .then(if (barArrived) Modifier.glass(RoundedCornerShape(30.dp), fill = 0.12f, border = 0.16f) else Modifier)
                     .pressable(onClose)
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Artwork(current?.artUri, 50.dp, cornerRadius = 16.dp)
+                // Invisible: la carátula que se ve es la que viaja desde el reproductor (QueueCover).
+                Artwork(
+                    current?.artUri, 50.dp, cornerRadius = 16.dp,
+                    modifier = Modifier
+                        .graphicsLayer { alpha = 0f }
+                        .onGloballyPositioned { origin.queueArt = it.boundsInRoot() }
+                )
+                Row(
+                    Modifier.weight(1f).graphicsLayer {
+                        translationX = slide.value
+                        alpha = ((progress.value - 0.8f) / 0.2f).coerceIn(0f, 1f)
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -197,19 +249,32 @@ fun QueueOverlay(
                     )
                 }
                 Box(
-                    Modifier.size(44.dp).pressable(onPlayPause).glass(RoundedCornerShape(50), fill = 0.14f),
+                    Modifier
+                        .size(46.dp)
+                        .onGloballyPositioned { origin.queuePlay = it.boundsInRoot() }
+                        .graphicsLayer { alpha = if (barArrived) 1f else 0f }
+                        .pressable(onPlayPause)
+                        .background(ink, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        null, tint = ink
+                        null, tint = inverse, modifier = Modifier.size(28.dp)
                     )
                 }
-                Box(Modifier.size(44.dp).pressable { if (state.hasNext) onNext() }, contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .onGloballyPositioned { origin.queueNext = it.boundsInRoot() }
+                        .graphicsLayer { alpha = if (barArrived) 1f else 0f }
+                        .pressable { if (state.hasNext) onNext() },
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         Icons.Rounded.SkipNext, null,
                         tint = ink.copy(alpha = if (state.hasNext) 1f else 0.35f)
                     )
+                }
                 }
             }
 
@@ -218,15 +283,18 @@ fun QueueOverlay(
                     .graphicsLayer {
                         val q = progress.value.coerceIn(0f, 1f)
                         translationY = (1f - q) * height * 0.45f
-                        alpha = ((q - 0.15f) / 0.6f).coerceIn(0f, 1f)
+                        alpha = ((q - 0.2f) / 0.5f).coerceIn(0f, 1f)
                     }
                     .fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(Str.get(R.string.queue), style = MaterialTheme.typography.titleLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(Str.get(R.string.queue), style = MaterialTheme.typography.titleLarge)
+                        com.melodia.app.ui.components.HelpBadge(Str.get(R.string.queue_hint), Modifier.padding(start = 2.dp), Str.get(R.string.queue))
+                    }
                     Text(
-                        "${items.size} · " + Str.get(R.string.queue_hint),
+                        "${items.size}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -245,7 +313,7 @@ fun QueueOverlay(
                     .graphicsLayer {
                         val q = progress.value.coerceIn(0f, 1f)
                         translationY = (1f - q) * height * 0.7f
-                        alpha = ((q - 0.1f) / 0.5f).coerceIn(0f, 1f)
+                        alpha = ((q - 0.25f) / 0.45f).coerceIn(0f, 1f)
                     }
             ) {
                 itemsIndexed(items, key = { _, q -> q.uid }) { index, item ->
@@ -359,5 +427,72 @@ fun QueueOverlay(
                 item { Spacer(Modifier.height(40.dp)) }
             }
         }
+    }
+}
+
+
+/** La carátula del reproductor, que se mueve hacia arriba hasta la barra de la cola (y vuelve). */
+@Composable
+private fun QueueCover(progress: State<Float>, state: PlayerState, rootPos: Offset) {
+    val origin = LocalCoverOrigin.current
+    val density = LocalDensity.current
+    val from = origin.playerCover ?: return
+    val to = origin.queueArt ?: from
+    val q = progress.value.coerceIn(0f, 1f)
+    val rect = Rect(
+        lerp(from.left, to.left, q) - rootPos.x, lerp(from.top, to.top, q) - rootPos.y,
+        lerp(from.right, to.right, q) - rootPos.x, lerp(from.bottom, to.bottom, q) - rootPos.y
+    )
+    FlyingCover(
+        artUri = state.current?.artUri,
+        rect = rect,
+        progress = 1f - q,
+        startRadiusPx = with(density) { 16.dp.toPx() },
+        isPlaying = state.isPlaying
+    )
+}
+
+
+/** La barra de controles del reproductor, viajando hasta la barra de arriba de la cola (y de vuelta). */
+@Composable
+private fun QueueBarMorph(progress: State<Float>, state: PlayerState, rootPos: Offset) {
+    val origin = LocalCoverOrigin.current
+    val density = LocalDensity.current
+    val q = progress.value.coerceIn(0f, 1f)
+    if (q >= 0.96f) return
+    // La barra llega a su sitio al 96 %: de ahí en adelante es la barra real, en el mismo lugar.
+    val qb = q / 0.96f
+    val bar0 = origin.playerControls ?: return
+    val bar1 = origin.queuePill ?: return
+    val a = 1f
+    fun mix(f: Rect, t: Rect) = Rect(
+        lerp(f.left, t.left, qb) - rootPos.x, lerp(f.top, t.top, qb) - rootPos.y,
+        lerp(f.right, t.right, qb) - rootPos.x, lerp(f.bottom, t.bottom, qb) - rootPos.y
+    )
+    val bar = mix(bar0, bar1)
+    val radius = with(density) { lerp(44.dp.toPx(), 30.dp.toPx(), qb).toDp() }
+    Box(
+        Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(bar.left.roundToInt(), bar.top.roundToInt()) }
+            .size(with(density) { bar.width.toDp() }, with(density) { bar.height.toDp() })
+            .graphicsLayer { alpha = a }
+            .glass(RoundedCornerShape(radius), fill = lerp(0.08f, 0.12f, qb), border = lerp(0.14f, 0.16f, qb))
+    )
+    val p0 = origin.playerPlay
+    val p1 = origin.queuePlay
+    if (p0 != null && p1 != null) {
+        Box(Modifier.graphicsLayer { alpha = a }) {
+            MorphPlayButton(rect = mix(p0, p1), progress = 1f - qb, isPlaying = state.isPlaying)
+        }
+    }
+    val n0 = origin.playerNext
+    val n1 = origin.queueNext
+    if (n0 != null && n1 != null) {
+        MorphIcon(
+            rect = mix(n0, n1),
+            icon = Icons.Rounded.SkipNext,
+            iconSize = 36.dp + (24.dp - 36.dp) * qb,
+            alpha = a * (if (state.hasNext) 1f else 0.35f)
+        )
     }
 }

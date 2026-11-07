@@ -1,5 +1,12 @@
 package com.melodia.app.ui.player
 
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.Placeable
 import com.melodia.app.Str
 import com.melodia.app.R
 
@@ -49,6 +56,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -60,7 +68,7 @@ import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -85,6 +93,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -110,6 +119,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.positionInRoot
@@ -197,7 +207,13 @@ fun PlayerScreen(
     onOpenOptions: () -> Unit,
     /** Cierra el reproductor y abre la pantalla del artista / álbum de la canción. */
     onOpenArtist: () -> Unit,
-    onOpenAlbum: () -> Unit
+    onOpenAlbum: () -> Unit,
+    /** Editar la información de la canción (solo si es del teléfono); null si no se puede. */
+    onEdit: (() -> Unit)? = null,
+    /** La cola está abierta: la carátula la dibuja la cola (misma carátula que viaja hasta su barra). */
+    hideCover: Boolean = false,
+    /** Diseño horizontal: carátula a un lado y el reproductor reducido al otro (se anima al girar). */
+    wide: Boolean = false
 ) {
     val current = state.current ?: return
     val accent = accentColor
@@ -210,19 +226,43 @@ fun PlayerScreen(
     var panel by rememberSaveable { mutableStateOf(0) }
     // Deslizar la portada a los lados: anterior / siguiente.
     val swipeX = remember { Animatable(0f) }
+    // Aviso efímero de "±5 s" al dar dos toques a un lado de la carátula.
+    var seekFx by remember { mutableStateOf<SeekFx?>(null) }
+    LaunchedEffect(seekFx?.at) {
+        val id = seekFx?.at ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(750)
+        if (seekFx?.at == id) seekFx = null
+    }
+    val menuCb by rememberUpdatedState(onAddToPlaylist)
+    val seekCb by rememberUpdatedState(onSeek)
+    val posCb by rememberUpdatedState({ position.value })
+    val durCb by rememberUpdatedState({ current.durationMs })
 
     // Espectro real de la canción (se analiza una vez y queda guardado en memoria).
     val spectrum by produceState(initialValue = null as Spectrum?, current.uri) {
         val uri = current.uri
-        val cached = uri?.let { SpectrumExtractor.peek(it) }
+        // Ya analizada antes (memoria o disco): aparece al instante.
+        val cached = uri?.let { SpectrumExtractor.load(context, it, current.durationMs) }
         if (cached != null) {
             value = cached
         } else {
             value = null
             // Espera un momento: si se salta de canción rápido, no se analiza ninguna de paso.
-            kotlinx.coroutines.delay(700)
-            val result = uri?.let { SpectrumExtractor.get(context, it, current.durationMs) }
-                ?: Spectrum.FAILED
+            kotlinx.coroutines.delay(400)
+            // En la nube, la canción que suena descarga primero; la onda espera a que tenga su colchón.
+            if (uri?.scheme == "http" || uri?.scheme == "https") {
+                (context.applicationContext as com.melodia.app.MelodiaApp).playerController.awaitHeadroom(8_000)
+            }
+            // Mientras se analiza, la barra se va llenando poco a poco.
+            val updates = kotlinx.coroutines.channels.Channel<Spectrum>(kotlinx.coroutines.channels.Channel.CONFLATED)
+            val painter = launch { for (partial in updates) value = partial }
+            val result = try {
+                uri?.let { SpectrumExtractor.get(context, it, current.durationMs) { s -> updates.trySend(s) } }
+                    ?: Spectrum.FAILED
+            } finally {
+                updates.close()
+            }
+            painter.join()
             // Si ya se cambió de canción, este resultado no vale: no pisar el de la nueva.
             coroutineContext.ensureActive()
             value = result
@@ -235,14 +275,36 @@ fun PlayerScreen(
 
     // Fondo: el color principal del álbum (ajustado para que el texto se lea).
     // La transición de color se lee solo al dibujar (drawBehind): no recompone nada por cuadro.
+    // Pantallas bajas (reproductores tipo FiiO): menos aire para que la carátula se vea grande.
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
+    val heightDp = if (rootSize.height > 0) rootSize.height / density.density
+    else androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.toFloat()
+    val compact = heightDp < 760f ||
+        com.melodia.app.ui.LocalDeviceClass.current == com.melodia.app.ui.DeviceClass.DAP || wide
+    // 0 = vertical · 1 = horizontal: todos los elementos viajan de una distribución a la otra.
+    // Al girar la pantalla la ventana cambia de golpe: la distribución salta a la nueva y los elementos
+    // entran deslizándose y apareciendo (sin pasar por posiciones intermedias imposibles).
+    val landAnim = rememberUpdatedState(if (wide) 1f else 0f)
+    val enter = remember { Animatable(1f) }
+    // Carátula: última posición estable (para transformarla hacia la nueva al girar) y estado del giro.
+    val coverMemo = remember { object { var last: Rect? = null; var from: Rect? = null } }
+    val look = { if (wide) enter.value else 1f - enter.value }
+    var firstWide by remember { mutableStateOf(true) }
+    LaunchedEffect(wide) {
+        if (firstWide) { firstWide = false } else {
+            coverMemo.from = coverMemo.last
+            enter.snapTo(0f)
+            enter.animateTo(1f, androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        }
+    }
     val bgTarget = LocalArt.current.dominant.forBackground(palette.dark)
     val bgAnim = animateColorAsState(bgTarget, tween(700), label = "playerBgColor")
     val darkTheme = palette.dark
 
-    val contentAlpha = ((progress - 0.45f) / 0.55f).coerceIn(0f, 1f)
+    // Textos y botones aparecen poco a poco (curva suave) desde el difuminado mientras se abre.
+    val contentAlpha = ((progress - 0.3f) / 0.7f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
     val holder = remember { CoordsHolder() }
     var slot by remember { mutableStateOf<Rect?>(null) }
-    var rootSize by remember { mutableStateOf(IntSize.Zero) }
     val p = progress.coerceIn(0f, 1f)
 
     // La "hoja" del reproductor se encoge hasta convertirse en la barra inferior (y al revés).
@@ -260,6 +322,9 @@ fun PlayerScreen(
     // Los botones viajan entre el reproductor y la barra mientras dure la transición.
     val morphButtons = collapseToMini && p < 0.999f &&
             origin.miniPlay != null && holder.play != null
+    // El título y el artista de la barra viajan hasta los del reproductor (y al revés).
+    val morphText = collapseToMini && p < 0.999f && !wide &&
+            origin.miniTitle != null && holder.title != null
 
     Box(Modifier.fillMaxSize().onSizeChanged { rootSize = it }) {
         // Fondo completo: la portada, ampliada y muy difuminada, teñida con su color principal.
@@ -323,18 +388,26 @@ fun PlayerScreen(
                     onDragStopped = { v -> onDragRelease(v) }
                 )
         ) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 26.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            val insets = androidx.compose.foundation.layout.WindowInsets.systemBars
+                .union(androidx.compose.foundation.layout.WindowInsets.displayCutout)
+            PlayerLayout(
+                land = { landAnim.value },
+                compact = compact,
+                hasPencil = onEdit != null,
+                insetL = insets.getLeft(density, androidx.compose.ui.unit.LayoutDirection.Ltr),
+                insetT = insets.getTop(density),
+                insetR = insets.getRight(density, androidx.compose.ui.unit.LayoutDirection.Ltr),
+                insetB = insets.getBottom(density),
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Todo lo que no es la carátula aparece cuando ella ya casi llegó.
+                // Todo lo que no es la carátula aparece poco a poco, saliendo de un difuminado.
                 val appear = Modifier.graphicsLayer {
-                    alpha = contentAlpha
-                    translationY = (1f - contentAlpha) * 40.dp.toPx()
+                    alpha = contentAlpha * (0.25f + 0.75f * enter.value)
+                    translationX = (1f - enter.value) * 48.dp.toPx() * (if (wide) 1f else -1f)
+                    val blur = (1f - contentAlpha) * 16.dp.toPx()
+                    renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && blur > 0.5f)
+                        androidx.compose.ui.graphics.BlurEffect(blur, blur, androidx.compose.ui.graphics.TileMode.Decal)
+                    else null
                 }
 
                 // --- Barra superior ---
@@ -366,6 +439,11 @@ fun PlayerScreen(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
+                    // En horizontal, el lápiz se coloca en la barra, a la izquierda de la cola.
+                    Spacer(Modifier.layout { m, c ->
+                        val w = if (onEdit != null) ((44.dp + 8.dp).toPx() * landAnim.value).roundToInt() else 0
+                        m.measure(c).let { layout(w, 0) {} }
+                    })
                     Box(
                         Modifier
                             .size(44.dp)
@@ -419,20 +497,30 @@ fun PlayerScreen(
                 // --- Hueco de la carátula: se adapta al alto disponible ---
                 Box(
                     Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
                         .then(swipeDrag)
-                        .padding(vertical = 14.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        Modifier
-                            .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                            .onGloballyPositioned { c ->
-                                holder.box?.let { slot = it.localBoundingBoxOf(c) }
-                            }
-                    )
-                }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                // Mantener presionada la carátula: menú de la canción.
+                                onLongPress = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    menuCb()
+                                },
+                                // Dos toques: ±5 s según el lado (como en YouTube).
+                                onDoubleTap = { o ->
+                                    val fwd = o.x > size.width / 2f
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val dur = durCb()
+                                    val target = (posCb() + if (fwd) 5_000L else -5_000L)
+                                        .coerceIn(0L, if (dur > 0) dur - 500L else Long.MAX_VALUE)
+                                    seekCb(target)
+                                    val now = System.currentTimeMillis()
+                                    val prev = seekFx
+                                    val secs = if (prev != null && prev.forward == fwd && now - prev.at < 1100L) prev.secs + 5 else 5
+                                    seekFx = SeekFx(fwd, secs, now)
+                                }
+                            )
+                        }
+                ) { SeekFlash(seekFx) }
 
                 Column(appear.fillMaxWidth().then(swipeDrag), horizontalAlignment = Alignment.CenterHorizontally) {
                     // --- Título, artista y formato del audio ---
@@ -450,7 +538,11 @@ fun PlayerScreen(
                                 title,
                                 style = MaterialTheme.typography.headlineMedium,
                                 textAlign = TextAlign.Center,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis
+                                maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .onGloballyPositioned { c -> holder.box?.let { holder.title = it.localBoundingBoxOf(c) } }
+                                    // Mientras viaja desde la barra, el que se ve es el título que se mueve.
+                                    .graphicsLayer { alpha = if (morphText) 0f else 1f }
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
@@ -462,25 +554,38 @@ fun PlayerScreen(
                                     .clip(RoundedCornerShape(50))
                                     .pressable(onOpenArtist)
                                     .padding(horizontal = 10.dp, vertical = 2.dp)
+                                    .onGloballyPositioned { c -> holder.box?.let { holder.artist = it.localBoundingBoxOf(c) } }
+                                    .graphicsLayer { alpha = if (morphText) 0f else 1f }
                             )
                         }
                     }
 
                     val audioLabel = current.audio.label
                     if (audioLabel.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            audioLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .glass(RoundedCornerShape(50), fill = 0.07f, border = 0.12f)
-                                .padding(horizontal = 14.dp, vertical = 5.dp)
-                        )
+                        // En horizontal se esconde (poco alto disponible).
+                        Column(
+                            Modifier
+                                .layout { m, c ->
+                                    val pl = m.measure(c)
+                                    layout(pl.width, (pl.height * (1f - landAnim.value)).roundToInt()) { pl.placeRelative(0, 0) }
+                                }
+                                .graphicsLayer { alpha = 1f - landAnim.value },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                audioLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .glass(RoundedCornerShape(50), fill = 0.07f, border = 0.12f)
+                                    .padding(horizontal = 14.dp, vertical = 5.dp)
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(if (compact) 4.dp else 10.dp))
 
                     // --- Me gusta, estrellas y efectos ---
                     MarkRow(
@@ -503,12 +608,13 @@ fun PlayerScreen(
                         onToggleFx = { effects.toggle() },
                         onAddToPlaylist = onAddToPlaylist
                     )
+                }
 
-                    Spacer(Modifier.height(10.dp))
-
+                Box(appear.fillMaxWidth().then(swipeDrag)) {
                     Timeline(
                         spectrum = spectrum,
                         position = position,
+                        remote = current.uri?.scheme?.startsWith("http") == true,
                         durationMs = current.durationMs,
                         accent = accent,
                         onSeek = onSeek,
@@ -516,15 +622,16 @@ fun PlayerScreen(
                         onSetBest = onSetBest,
                         onClearBest = onClearBest
                     )
-
-                    Spacer(Modifier.height(14.dp))
+                }
 
                     // --- Controles en un panel de vidrio ---
                     Row(
-                        Modifier
+                        appear
                             .fillMaxWidth()
-                            .glass(RoundedCornerShape(44.dp), fill = 0.08f, border = 0.14f)
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                            .onGloballyPositioned { if (!hideCover) origin.playerControls = it.boundsInRoot() }
+                            // Con la cola abierta, la barra de vidrio la dibuja la cola (es la misma que viaja).
+                            .then(if (hideCover) Modifier else Modifier.glass(RoundedCornerShape(44.dp), fill = 0.08f, border = 0.14f))
+                            .padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -548,8 +655,9 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .onGloballyPositioned { c ->
                                     holder.box?.let { holder.play = it.localBoundingBoxOf(c) }
+                                    if (!hideCover) origin.playerPlay = c.boundsInRoot()
                                 }
-                                .graphicsLayer { alpha = if (morphButtons) 0f else 1f },
+                                .graphicsLayer { alpha = if (morphButtons || hideCover) 0f else 1f },
                             isPlaying = state.isPlaying,
                             onClick = {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -561,8 +669,9 @@ fun PlayerScreen(
                                 .size(54.dp)
                                 .onGloballyPositioned { c ->
                                     holder.box?.let { holder.next = it.localBoundingBoxOf(c) }
+                                    if (!hideCover) origin.playerNext = c.boundsInRoot()
                                 }
-                                .graphicsLayer { alpha = if (morphButtons) 0f else 1f }
+                                .graphicsLayer { alpha = if (morphButtons || hideCover) 0f else 1f }
                                 .pressable { if (state.hasNext) onNext() },
                             contentAlignment = Alignment.Center
                         ) {
@@ -582,8 +691,26 @@ fun PlayerScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(14.dp))
-                }
+                // --- Editar información de la canción (solo música del teléfono) ---
+                if (onEdit != null) {
+                    Box(
+                        Modifier
+                            .then(appear)
+                            .size(44.dp)
+                            .pressable(onEdit)
+                            .glass(CircleShape, fill = 0.12f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Rounded.Edit, Str.get(R.string.edit_song), tint = ink)
+                    }
+                } else Spacer(Modifier.size(0.dp))
+
+                // Sonda invisible: marca dónde va la carátula en cada distribución.
+                Box(
+                    Modifier.onGloballyPositioned { c ->
+                        holder.box?.let { slot = it.localBoundingBoxOf(c) }
+                    }
+                )
             }
 
             // --- La carátula: vuela desde la miniatura y se funde con el fondo ---
@@ -593,45 +720,62 @@ fun PlayerScreen(
                 val from = (if (collapseToMini) origin.miniRect ?: origin.rect else origin.rect)
                     ?.translate(-boxPos.x, -boxPos.y)
                     ?: Rect(target.center, 0f).inflate(with(density) { 24.dp.toPx() })
-                FlyingCover(
-                    artUri = current.artUri,
-                    // Ocupa de borde a borde: el difuminado se funde con el fondo sin cortes.
-                    rect = lerpRect(
-                        from,
-                        // +10 % de tamaño respecto al hueco (5 % por lado) y el margen de difuminado.
-                        target.inflate(with(density) { 26.dp.toPx() } + target.width * 0.05f),
-                        progress.coerceIn(0f, 1f)
-                    ),
-                    progress = progress.coerceIn(0f, 1f),
-                    startRadiusPx = origin.radius,
-                    isPlaying = state.isPlaying,
-                    slideX = swipeX.value,
-                    slideWidth = rootSize.width.toFloat()
+                // Ocupa de borde a borde: el difuminado se funde con el fondo sin cortes.
+                val openRect = lerpRect(
+                    from,
+                    // +10 % de tamaño respecto al hueco (5 % por lado) y el margen de difuminado.
+                    target.inflate((with(density) { 26.dp.toPx() } + target.width * 0.05f) * (1f - look())),
+                    progress.coerceIn(0f, 1f)
                 )
+                // Al girar, la carátula se transforma desde su forma anterior (sin cortes ni parpadeos).
+                val fromRect = coverMemo.from
+                val coverRect = if (fromRect != null && enter.value < 0.999f)
+                    lerpRect(fromRect, openRect, enter.value) else openRect
+                if (enter.value >= 0.999f) { coverMemo.last = coverRect; coverMemo.from = null }
+                // Con el reproductor abierto, se recuerda dónde está la carátula (en pantalla): la cola
+                // la lleva desde ahí hasta su barra superior, como si fuera el mismo reproductor.
+                if (progress >= 0.999f) origin.playerCover = coverRect.translate(boxPos)
+                if (!hideCover) {
+                    Box {
+                    FlyingCover(
+                        artUri = current.artUri,
+                        rect = coverRect,
+                        progress = progress.coerceIn(0f, 1f),
+                        startRadiusPx = origin.radius,
+                        isPlaying = state.isPlaying,
+                        slideX = swipeX.value,
+                        slideWidth = rootSize.width.toFloat(),
+                        land = look
+                    )
+                    }
+                }
             }
 
-            // --- Off vocal: justo debajo del botón del ecualizador ---
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 8.dp + 44.dp + 8.dp, end = 26.dp)
-                    .graphicsLayer {
-                        alpha = contentAlpha
-                        translationY = (1f - contentAlpha) * 40.dp.toPx()
-                    }
-                    .size(44.dp)
-                    .pressable { panel = 2 }
-                    .then(
-                        if (fx.vocalOff) Modifier.background(accent, CircleShape)
-                        else Modifier.glass(CircleShape, fill = 0.12f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.MicOff, Str.get(R.string.off_vocal),
-                    tint = if (fx.vocalOff) accent.onAccent() else ink
+            // --- Título y artista viajan entre la barra y el reproductor ---
+            if (morphText) {
+                val t0 = origin.miniTitle!!
+                val t1 = holder.title!!
+                MorphText(
+                    text = current.title,
+                    rect = lerpRect(t0, t1, p),
+                    maxWidthPx = maxOf(t0.width, t1.width),
+                    style = androidx.compose.ui.text.lerp(MaterialTheme.typography.titleMedium, MaterialTheme.typography.headlineMedium, p),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                val a0 = origin.miniArtist
+                val a1 = holder.artist
+                if (a0 != null && a1 != null) {
+                    // El del reproductor lleva 10 dp de margen a los lados: el texto empieza tras él.
+                    val pad = with(density) { 10.dp.toPx() } * p
+                    val r = lerpRect(a0, a1, p)
+                    MorphText(
+                        text = current.artist,
+                        rect = Rect(r.left + pad, r.top + pad * 0.2f, r.right - pad, r.bottom),
+                        maxWidthPx = maxOf(a0.width, a1.width - with(density) { 20.dp.toPx() }),
+                        style = androidx.compose.ui.text.lerp(MaterialTheme.typography.bodyMedium, MaterialTheme.typography.titleMedium, p),
+                        color = lerpColor(MaterialTheme.colorScheme.onSurfaceVariant, accent, p)
+                    )
+                }
             }
 
             // --- Play y Siguiente viajan entre el reproductor y la barra ---
@@ -688,15 +832,6 @@ fun PlayerScreen(
         ) {
             FxPanel(fx = fx, effects = effects, onClose = { panel = 0 }, modifier = panelModifier)
         }
-        AnimatedVisibility(
-            visible = panel == 2,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)) { it } +
-                    fadeIn(tween(200)),
-            exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(200))
-        ) {
-            VocalPanel(fx = fx, effects = effects, onClose = { panel = 0 }, modifier = panelModifier)
-        }
     }
 }
 
@@ -752,9 +887,12 @@ private fun Timeline(
     onSeek: (Long) -> Unit,
     bestMs: Long,
     onSetBest: (Long) -> Unit,
-    onClearBest: () -> Unit
+    onClearBest: () -> Unit,
+    remote: Boolean = false
 ) {
     val positionMs by position.collectAsState()
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp
+    val bufferedMs by app.playerController.buffered.collectAsState()
     val haptics = LocalHapticFeedback.current
     Column(Modifier.fillMaxWidth()) {
         SpectrumSeekBar(
@@ -763,7 +901,9 @@ private fun Timeline(
             durationMs = durationMs,
             accent = accent,
             onSeek = onSeek,
-            bestFrac = if (bestMs >= 0 && durationMs > 0) (bestMs.toFloat() / durationMs).coerceIn(0f, 1f) else -1f
+            bestFrac = if (bestMs >= 0 && durationMs > 0) (bestMs.toFloat() / durationMs).coerceIn(0f, 1f) else -1f,
+            // Solo la música de la nube muestra cuánto va descargado.
+            bufferedFrac = if (remote && durationMs > 0) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else -1f
         )
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -841,7 +981,9 @@ private fun SpectrumSeekBar(
     accent: Color,
     onSeek: (Long) -> Unit,
     /** Posición de "la mejor parte" (0..1), o -1 si no hay. */
-    bestFrac: Float = -1f
+    bestFrac: Float = -1f,
+    /** Hasta dónde está descargada la canción (0..1), o -1 si es del teléfono. */
+    bufferedFrac: Float = -1f
 ) {
     val haptics = LocalHapticFeedback.current
     val inkC = ink
@@ -852,11 +994,34 @@ private fun SpectrumSeekBar(
     val frac = if (dragging) dragFrac else (positionMs.toFloat() / duration).coerceIn(0f, 1f)
 
     val ready = spectrum != null && spectrum.ok && spectrum.size > 0
-    // Mientras se analiza, una ola suave recorre las barras.
-    val wave = rememberInfiniteTransition(label = "specWait")
-    val phase by wave.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "specPhase"
-    )
+    // Mientras se analiza, una ola suave recorre las barras (cuando ya está completo, se detiene).
+    val waiting = !ready || spectrum?.complete != true
+    val still = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val phaseState: androidx.compose.runtime.State<Float> = if (waiting) {
+        val wave = rememberInfiniteTransition(label = "specWait")
+        wave.animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "specPhase")
+    } else still
+    val phase by phaseState
+
+    // Avance de la carga, suavizado: el análisis y la descarga llegan a saltos; aquí se recorren
+    // de forma continua. Al cambiar de canción (el valor baja) se reinicia al instante.
+    val loadTarget = if (!ready) 0f else if (spectrum!!.complete) 1f else spectrum.progress.coerceIn(0f, 1f)
+    val loadAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(loadTarget) {
+        when {
+            loadTarget < loadAnim.value - 0.02f -> loadAnim.snapTo(loadTarget)
+            // Ya analizado antes (aparece completo de golpe): se muestra al instante.
+            loadTarget >= 1f && loadAnim.value <= 0f -> loadAnim.snapTo(1f)
+            else -> loadAnim.animateTo(loadTarget, tween(if (loadTarget >= 1f) 380 else 300, easing = LinearEasing))
+        }
+    }
+    val bufTarget = if (bufferedFrac < 0f) -1f else bufferedFrac
+    val bufAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(bufTarget) {
+        if (bufTarget < 0f) return@LaunchedEffect
+        if (bufTarget < bufAnim.value - 0.02f) bufAnim.snapTo(bufTarget)
+        else bufAnim.animateTo(bufTarget, tween(400, easing = LinearEasing))
+    }
 
     Canvas(
         Modifier
@@ -887,6 +1052,9 @@ private fun SpectrumSeekBar(
             }
     ) {
         val n = if (ready) spectrum!!.size else SpectrumExtractor.BUCKETS
+        // Frente de la carga en barras (con decimales: la barra del borde aparece de a poco).
+        val loadedF = if (!ready) 0f else loadAnim.value * n
+        val buf = if (bufferedFrac < 0f) -1f else bufAnim.value
         val slot = size.width / n
         val barW = slot * 0.62f
         val corner = CornerRadius(barW / 2f)
@@ -905,22 +1073,40 @@ private fun SpectrumSeekBar(
         for (i in 0 until n) {
             val pos = (i + 0.5f) / n
             val played = pos <= frac
+            // Lo ya descargado (aún sin sonar) se ve un poco más claro que lo que falta bajar;
+            // el borde entre ambos es un degradado de un par de barras, sin escalones.
+            val loadedK = if (buf < 0f) 1f else ((buf - pos) * n / 2f + 0.5f).coerceIn(0f, 1f)
             val base = if (played) accent else inkC
+            val dim = if (played) 1f else 0.5f + 0.5f * loadedK
             // Las barras cercanas a la posición actual "se inflan" un poco.
             val near = 1f - (abs(pos - frac) * 10f).coerceIn(0f, 1f)
 
-            if (ready) {
-                val s = spectrum!!
-                val h = size.height * (0.10f + 0.90f * s.level[i]) * (1f + 0.12f * near)
-                // Agudos (capa exterior), medios, y graves (núcleo).
-                layer(i, h, base.copy(alpha = if (played) 0.35f else 0.14f))
-                layer(i, h * (s.low[i] + s.mid[i]), base.copy(alpha = if (played) 0.65f else 0.26f))
-                layer(i, h * s.low[i], base.copy(alpha = if (played) 1f else 0.45f))
-            } else {
-                val w = sin((pos * 6f - phase * 2f * PI.toFloat())).let { (it + 1f) / 2f }
-                val h = size.height * (0.12f + 0.10f * w)
-                layer(i, h, base.copy(alpha = if (spectrum?.ok == false) 0.2f else 0.15f + 0.2f * w))
+            // Mientras se carga, solo las barras ya analizadas son reales; el resto espera. La barra
+            // del borde pasa de la ola a su altura real de forma gradual.
+            val reveal = if (ready) (loadedF - i).coerceIn(0f, 1f) else 0f
+            val w = sin((pos * 6f - phase * 2f * PI.toFloat())).let { (it + 1f) / 2f }
+            val waveH = size.height * (0.12f + 0.10f * w)
+            if (reveal < 1f) {
+                layer(i, waveH, base.copy(alpha = (if (spectrum?.ok == false) 0.2f else 0.15f + 0.2f * w) * (1f - reveal)))
             }
+            if (reveal > 0f) {
+                val s = spectrum!!
+                val realH = size.height * (0.10f + 0.90f * s.level[i]) * (1f + 0.12f * near)
+                val h = waveH + (realH - waveH) * reveal
+                // Agudos (capa exterior), medios, y graves (núcleo).
+                layer(i, h, base.copy(alpha = (if (played) 0.35f else 0.14f) * dim * reveal))
+                layer(i, h * (s.low[i] + s.mid[i]), base.copy(alpha = (if (played) 0.65f else 0.26f) * dim * reveal))
+                layer(i, h * s.low[i], base.copy(alpha = (if (played) 1f else 0.45f) * dim * reveal))
+            }
+        }
+
+        // Frente de carga: una línea fina que avanza mientras se analiza la canción.
+        if (ready && loadAnim.value < 1f) {
+            val lx = loadedF * slot
+            drawRoundRect(
+                accent.copy(alpha = 0.55f), Offset(lx - 1.dp.toPx(), 6.dp.toPx()),
+                Size(2.dp.toPx(), size.height - 12.dp.toPx()), CornerRadius(1.dp.toPx())
+            )
         }
 
         // Marca de "la mejor parte": línea fina con un punto arriba.
@@ -939,4 +1125,173 @@ private fun SpectrumSeekBar(
             inkC, Offset(x - 1.dp.toPx(), 0f), Size(2.dp.toPx(), size.height), CornerRadius(1.dp.toPx())
         )
     }
+}
+
+
+/**
+ * Distribución del reproductor. Hijos, en orden: barra superior, zona de la carátula (para deslizar),
+ * título + marcas, línea de tiempo, controles, lápiz y sonda de la carátula.
+ * Vertical: todo apilado con la carátula en el hueco central. Horizontal: carátula cuadrada a la izquierda
+ * y el resto, reducido y centrado, a la derecha. [land] (0..1) mezcla las dos posiciones de cada elemento.
+ */
+@Composable
+private fun PlayerLayout(
+    land: () -> Float,
+    compact: Boolean,
+    hasPencil: Boolean,
+    insetL: Int,
+    insetT: Int,
+    insetR: Int,
+    insetB: Int,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    androidx.compose.ui.layout.Layout(content, modifier) { ms, constraints ->
+        val w = constraints.maxWidth
+        val h = constraints.maxHeight
+        val t = land().coerceIn(0f, 1f)
+        fun lerpF(a: Float, b: Float) = a + (b - a) * t
+        val padX = 26.dp.toPx()
+        val g1 = (if (compact) 4.dp else 10.dp).toPx()
+        val g2 = (if (compact) 6.dp else 14.dp).toPx()
+        val coverPad = (if (compact) 4.dp else 14.dp).toPx()
+        val btn = 44.dp.toPx()
+        val gap8 = 8.dp.toPx()
+        val availH = (h - insetT - insetB).toFloat()
+
+        // Vertical
+        val wP = (w - insetL - insetR - padX * 2f).coerceAtLeast(1f)
+        val xP = insetL + padX
+        // Horizontal: carátula cuadrada a la izquierda; a la derecha, el panel
+        val marginL = 16.dp.toPx()
+        val side = minOf(availH - 24.dp.toPx(), w * 0.5f - insetL - marginL).coerceAtLeast(1f)
+        val coverX = insetL + marginL
+        val coverY = insetT + (availH - side) / 2f
+        val xL = coverX + side + 28.dp.toPx()
+        val wL = (w - insetR - padX - xL).coerceAtLeast(1f)
+        // Escala del panel derecho según el alto disponible (celulares bajos lo reducen un poco).
+        val sL = (availH / 380.dp.toPx()).coerceIn(0.6f, 1f)
+        val sc = lerpF(1f, sL)
+        val pw = lerpF(wP, wL)
+        val px = lerpF(xP, xL)
+        val mw = (pw / sc).roundToInt().coerceAtLeast(1)
+
+        fun measure(i: Int): androidx.compose.ui.layout.Placeable =
+            ms[i].measure(Constraints(minWidth = mw, maxWidth = mw, minHeight = 0, maxHeight = h * 2))
+        val top = measure(0)
+        val info = measure(2)
+        val tl = measure(3)
+        val ctl = measure(4)
+        val hTop = top.height * sc
+        val hInfo = info.height * sc
+        val hTl = tl.height * sc
+        val hCtl = ctl.height * sc
+
+        // --- Vertical ---
+        val bottomP = h - insetB - g2
+        val ctlYP = bottomP - hCtl
+        val tlYP = ctlYP - g2 - hTl
+        val infoYP = tlYP - g1 - hInfo
+        val topYP = insetT.toFloat()
+        val areaTopP = topYP + hTop + coverPad
+        val areaHP = (infoYP - coverPad - areaTopP).coerceAtLeast(1f)
+        val sideP = minOf(wP, areaHP)
+
+        // --- Horizontal: lo de la derecha, centrado en el alto que deja la barra superior ---
+        val topYL = insetT.toFloat()
+        val stack = hInfo + g1 * sc + hTl + g2 * sc + hCtl
+        val availTop = topYL + hTop
+        val startL = availTop + ((h - insetB - availTop - stack) / 2f).coerceAtLeast(0f)
+        val infoYL = startL
+        val tlYL = infoYL + hInfo + g1 * sc
+        val ctlYL = tlYL + hTl + g2 * sc
+
+        val areaX = lerpF(xP, 0f)
+        val areaY = lerpF(areaTopP - coverPad, 0f)
+        val areaW = lerpF(wP, xL - 8.dp.toPx()).roundToInt().coerceAtLeast(0)
+        val areaH = lerpF(areaHP + coverPad * 2f, h.toFloat()).roundToInt().coerceAtLeast(0)
+        val cover = ms[1].measure(Constraints.fixed(areaW, areaH))
+        val probeS = lerpF(sideP, side).roundToInt().coerceAtLeast(0)
+        val probeX = lerpF(xP + (wP - sideP) / 2f, coverX)
+        val probeY = lerpF(areaTopP + (areaHP - sideP) / 2f, coverY)
+        val probe = ms[6].measure(Constraints.fixed(probeS, probeS))
+
+        val pencil = ms[5].measure(
+            if (hasPencil) Constraints.fixed(btn.roundToInt(), btn.roundToInt()) else Constraints.fixed(0, 0)
+        )
+        val penXP = (w - insetR - padX) - btn
+        val penYP = topYP + hTop + gap8
+        val penXL = xL + wL - (btn * 3f + gap8 * 2f) * sc
+        val penYL = topYL + 8.dp.toPx() * sc
+
+        layout(w, h) {
+            cover.place(areaX.roundToInt(), areaY.roundToInt())
+            probe.place(probeX.roundToInt(), probeY.roundToInt())
+            fun Placeable.putScaled(x: Float, y: Float) = placeWithLayer(x.roundToInt(), y.roundToInt()) {
+                scaleX = sc; scaleY = sc
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+            }
+            top.putScaled(px, lerpF(topYP, topYL))
+            info.putScaled(px, lerpF(infoYP, infoYL))
+            tl.putScaled(px, lerpF(tlYP, tlYL))
+            ctl.putScaled(px, lerpF(ctlYP, ctlYL))
+            pencil.putScaled(lerpF(penXP, penXL), lerpF(penYP, penYL))
+        }
+    }
+}
+
+
+/** Dos toques en un lado de la carátula: cuántos segundos y hacia dónde. */
+private data class SeekFx(val forward: Boolean, val secs: Int, val at: Long)
+
+/** Destello de "±N s" con flechas que se encienden en cadena, como el de YouTube. Se va solo. */
+@Composable
+private fun SeekFlash(fx: SeekFx?) {
+    var last by remember { mutableStateOf(fx) }
+    if (fx != null) last = fx
+    val shown = last ?: return
+    val alpha by animateFloatAsState(if (fx != null) 1f else 0f, tween(if (fx != null) 120 else 380), label = "seekFlash")
+    if (alpha <= 0.01f && fx == null) return
+    // Cada toque hace "saltar" un poco el número.
+    val tap = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(shown.at) {
+        tap.snapTo(0f)
+        tap.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 500f))
+    }
+    // Solo el número (sin fondo ni brillo): así no se ve ningún borde sobre la carátula.
+    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha }) {
+        val side = if (shown.forward) Alignment.CenterEnd else Alignment.CenterStart
+        val shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 3f), 18f)
+        Text(
+            (if (shown.forward) "+" else "\u2212") + "${shown.secs} s",
+            style = MaterialTheme.typography.displaySmall.copy(
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, shadow = shadow
+            ),
+            color = Color.White,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier
+                .align(side)
+                .fillMaxWidth(0.5f)
+                .graphicsLayer {
+                    val k = 0.82f + 0.18f * tap.value
+                    scaleX = k; scaleY = k
+                }
+        )
+    }
+}
+
+
+/** Texto que viaja: se coloca en [rect] (coordenadas del reproductor) con el estilo intermedio. */
+@Composable
+private fun MorphText(text: String, rect: Rect, maxWidthPx: Float, style: androidx.compose.ui.text.TextStyle, color: Color) {
+    val density = LocalDensity.current
+    // Sin ancho fijo: el ancho intermedio nunca coincide exacto con el del texto y eso lo hacía
+    // parpadear entre "505" y "5…". Solo se limita al ancho final (donde el texto ya cabe).
+    Text(
+        text, style = style, color = color, maxLines = 1, softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
+            .widthIn(max = with(density) { (maxWidthPx + 4f).coerceAtLeast(1f).toDp() })
+    )
 }

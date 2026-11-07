@@ -4,6 +4,7 @@ import com.melodia.app.Str
 import com.melodia.app.R
 
 import android.net.Uri
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -22,6 +23,9 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +35,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import com.melodia.app.ui.theme.ink
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Icon
@@ -76,6 +85,19 @@ class CoverOrigin {
     var miniPill: Rect? = null
     var miniPlay: Rect? = null
     var miniNext: Rect? = null
+    /** Carátula del reproductor abierto y carátula de la barra de la cola (para unirlas al abrir la cola). */
+    var playerCover: Rect? = null
+    var queueArt: Rect? = null
+    /** Barra de controles del reproductor y su play / siguiente; y la barra de la cola con los suyos. */
+    var playerControls: Rect? = null
+    var playerPlay: Rect? = null
+    var playerNext: Rect? = null
+    var queuePill: Rect? = null
+    /** Título y artista del mini-reproductor (viajan hasta los del reproductor). */
+    var miniTitle: Rect? = null
+    var miniArtist: Rect? = null
+    var queuePlay: Rect? = null
+    var queueNext: Rect? = null
     /** true si el reproductor se abrió desde la barra (no desde una canción). */
     var openedFromMini: Boolean = false
     var radius: Float = 14f
@@ -91,11 +113,63 @@ data class CollectionTarget(
     val title: String,
     val subtitle: String,
     val artUri: Uri?,
-    val songs: List<Song>
+    val songs: List<Song>,
+    /** Qué fijar en Inicio desde su menú (álbum o artista); null si no se puede fijar. */
+    val pin: com.melodia.app.data.HomePin? = null,
+    /** Si es un álbum: su id, para mostrar "me gusta" y estrellas en el menú. */
+    val albumId: Long? = null
 )
 
 /** Abre el menú de un álbum / artista / carpeta / lista al mantenerlo presionado. */
 val LocalCollectionMenu = staticCompositionLocalOf<((CollectionTarget) -> Unit)?> { null }
+
+/** "Me gusta" y estrellas de los álbumes, por id de álbum. */
+val LocalAlbumMarks = compositionLocalOf<Map<Long, SongMark>> { emptyMap() }
+
+/** Corazón y cinco estrellas para marcar un álbum. */
+@Composable
+fun AlbumMarkBar(mark: SongMark?, onLike: () -> Unit, onRate: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val accent = accentColor
+    val broken = ink.copy(alpha = 0.55f)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val heartBurst = rememberBurst()
+    val starBursts = List(5) { rememberBurst() }
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(40.dp).burst(heartBurst, accent, broken).pressable {
+                val wasLiked = mark?.liked == true
+                onLike()
+                scope.launch { heartBurst.play(if (wasLiked) BurstKind.BROKEN else BurstKind.HEART) }
+            },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                if (mark?.liked == true) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                Str.get(R.string.like),
+                tint = if (mark?.liked == true) accent else ink.copy(alpha = 0.7f),
+                modifier = Modifier.size(26.dp)
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        for (n in 1..5) {
+            Box(
+                Modifier.size(38.dp).burst(starBursts[n - 1], accent).pressable {
+                    // Tocar la misma cantidad la quita: entonces no hay destellos.
+                    val clearing = (mark?.rating ?: 0) == n
+                    onRate(n)
+                    if (!clearing) scope.launch { starBursts[n - 1].play(BurstKind.STAR) }
+                },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if ((mark?.rating ?: 0) >= n) Icons.Rounded.Star else Icons.Rounded.StarBorder, null,
+                    tint = if ((mark?.rating ?: 0) >= n) accent else ink.copy(alpha = 0.5f),
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        }
+    }
+}
 
 /** "Me gusta" y estrellas de todas las canciones, por id. */
 val LocalMarks = compositionLocalOf<Map<Long, SongMark>> { emptyMap() }
@@ -162,10 +236,19 @@ fun StaggeredItem(index: Int, content: @Composable () -> Unit) {
         content()
         return
     }
+    // Ya se animó una vez (la lista lo recuerda aunque la fila salga de pantalla): al volver
+    // deslizando rápido, aparece al instante y no se ven huecos vacíos.
+    var shown by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (shown) {
+        content()
+        return
+    }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(index * 40L)
         visible = true
+        kotlinx.coroutines.delay(700)
+        shown = true
     }
     val progress by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
@@ -241,13 +324,23 @@ fun SongRow(
                 color = if (isCurrent) accent else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            Text(
-                // ☁ = la canción viene del servidor (Subsonic / Navidrome).
-                if (song.isRemote) "☁  ${song.artist}" else song.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Nube = la canción viene del servidor (Subsonic / Navidrome) y se comparte entre dispositivos.
+                if (song.isRemote) {
+                    Icon(
+                        Icons.Rounded.Cloud, null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    song.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         if (mark != null) {
@@ -284,45 +377,56 @@ fun SongRow(
 // ---------------------------------------------------------------------------
 
 @Composable
-fun HelpBadge(text: String, modifier: Modifier = Modifier) {
+fun HelpBadge(text: String, modifier: Modifier = Modifier, title: String? = null) {
     var show by remember { mutableStateOf(false) }
     val palette = LocalPalette.current
-    val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
+    // Círculo discreto con "!": al tocarlo se abre una ventana corta que explica para qué sirve.
     Box(
         modifier
-            .size(28.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        show = true
-                        tryAwaitRelease()
-                        show = false
-                    }
-                )
-            },
+            .size(32.dp)
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null
+            ) { show = true },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            Icons.Rounded.ErrorOutline,
-            contentDescription = Str.get(R.string.help_hold),
-            tint = palette.ink.copy(alpha = if (show) 0.9f else 0.4f),
-            modifier = Modifier.size(18.dp)
-        )
-        if (show) {
-            Popup(
-                popupPositionProvider = remember(gap) { AbovePositionProvider(gap) },
-                properties = PopupProperties(focusable = false)
+        Box(
+            Modifier
+                .size(20.dp)
+                .border(1.5.dp, palette.ink.copy(alpha = 0.45f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "!",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                color = palette.ink.copy(alpha = 0.6f)
+            )
+        }
+    }
+    if (show) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { show = false }) {
+            val shape = RoundedCornerShape(26.dp)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(palette.bg.copy(alpha = 0.97f), shape)
+                    .glass(shape, fill = 0.06f, border = 0.16f)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                val shape = RoundedCornerShape(18.dp)
                 Text(
-                    text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.ink,
+                    title ?: Str.get(R.string.help_title),
+                    style = MaterialTheme.typography.titleLarge, color = palette.ink
+                )
+                Text(text, style = MaterialTheme.typography.bodyLarge, color = palette.ink)
+                Text(
+                    Str.get(R.string.help_ok),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = accentColor,
                     modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .background(palette.bg.copy(alpha = 0.96f), shape)
-                        .glass(shape, fill = 0.06f, border = 0.18f)
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .align(Alignment.End)
+                        .clickable { show = false }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
         }

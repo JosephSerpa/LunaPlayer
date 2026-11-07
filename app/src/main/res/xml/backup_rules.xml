@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copia de seguridad automática (Android 11 y anteriores): no se guardan los datos del servidor. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="server.xml" />
+    <exclude domain="sharedpref" path="lastfm.xml" />
+    <exclude domain="sharedpref" path="sync.xml" />
+        <exclude domain="sharedpref" path="widget.xml" />
+    <exclude domain="database" path="server_library.db" />
+    <exclude domain="database" path="server_library.db-wal" />
+    <exclude domain="database" path="server_library.db-shm" />
+</full-backup-content>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_bg" android:clipToOutline="true">
+    <ImageView android:id="@+id/bg_art" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:contentDescription="@null"/>
+    <ImageView android:id="@+id/bg_tint" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitXY" android:src="@drawable/widget_scrim" android:contentDescription="@null"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal"
+        android:gravity="center_vertical" android:padding="10dp">
+        <ImageView android:id="@+id/art" android:layout_width="wrap_content" android:layout_height="match_parent" android:maxWidth="230dp" android:adjustViewBounds="true"
+            android:scaleType="fitCenter" android:src="@drawable/ic_w_note" android:contentDescription="@null"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="12dp" android:orientation="vertical">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+                    <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" 
+                android:text="@string/widget_idle" android:textColor="#FFFFFFFF" android:textSize="18sp" android:textStyle="bold"
+                android:singleLine="true" android:ellipsize="end"/>
+            <TextView android:id="@+id/artist" android:layout_width="match_parent" android:layout_height="wrap_content" 
+                android:text="@string/widget_idle_sub" android:textColor="#BFFFFFFF" android:textSize="14sp" android:singleLine="true" android:ellipsize="end"/>
+                </LinearLayout>
+                <ImageView android:id="@+id/btn_like" android:layout_width="34dp" android:layout_height="34dp" android:layout_marginStart="4dp"
+            android:padding="7dp" android:src="@drawable/ic_w_heart_border" android:tint="#FFFFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+            android:background="@drawable/widget_pill" android:orientation="horizontal" android:gravity="center_vertical" android:padding="5dp">
+            <ImageView android:layout_marginStart="0dp" android:id="@+id/btn_prev" android:layout_width="34dp" android:layout_height="34dp" 
+            android:padding="7dp" android:src="@drawable/ic_w_prev" android:tint="#FFFFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:layout_marginStart="10dp" android:id="@+id/btn_play" android:layout_width="48dp" android:layout_height="48dp"  android:background="@drawable/widget_play_bg"
+            android:padding="12dp" android:src="@drawable/ic_w_play" android:tint="#FF15131C" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:layout_marginStart="10dp" android:id="@+id/btn_next" android:layout_width="34dp" android:layout_height="34dp" 
+            android:padding="7dp" android:src="@drawable/ic_w_next" android:tint="#FFFFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+        </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

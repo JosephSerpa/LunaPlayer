@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
@@ -62,6 +63,7 @@ fun ServerScreen(
     config: ServerConfig,
     library: LibraryState,
     settings: ServerSettings,
+    sync: com.melodia.app.data.server.ServerSync,
     onSync: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -114,7 +116,7 @@ fun ServerScreen(
             OutlinedTextField(
                 value = url, onValueChange = { url = it; message = null },
                 label = { Text(Str.get(R.string.srv_address)) },
-                placeholder = { Text("http://192.168.1.10:4533") },
+                placeholder = { Text("http://mi-servidor:4533") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                 colors = fieldColors,
@@ -281,6 +283,47 @@ fun ServerScreen(
                                 .padding(vertical = 10.dp)
                         )
                     }
+                }
+            }
+
+            // --- Sincronización de listas, me gusta y estrellas ---
+            val syncOn by sync.enabled.collectAsState()
+            val syncError by sync.error.collectAsState()
+            SettingsSectionLabel(Str.get(R.string.srv_sync_user), help = Str.get(R.string.srv_sync_user_help))
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(Str.get(R.string.srv_sync_user_title), style = MaterialTheme.typography.titleMedium, color = ink)
+                        val st by sync.status.collectAsState()
+                        if (syncOn && syncError == null) st?.let {
+                            Text(
+                                Str.get(
+                                    R.string.srv_sync_user_last,
+                                    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it.at)),
+                                    it.likes, it.playlists
+                                ),
+                                style = MaterialTheme.typography.labelMedium, color = ink.copy(alpha = 0.6f)
+                            )
+                        }
+                        if (syncOn && syncError != null) {
+                            Text(
+                                Str.get(R.string.srv_sync_user_error),
+                                style = MaterialTheme.typography.labelMedium, color = ErrorRed
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = syncOn,
+                        onCheckedChange = { sync.setEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = accent,
+                            checkedBorderColor = Color.Transparent,
+                            uncheckedThumbColor = ink.copy(alpha = 0.7f),
+                            uncheckedTrackColor = ink.copy(alpha = 0.15f),
+                            uncheckedBorderColor = Color.Transparent
+                        )
+                    )
                 }
             }
 

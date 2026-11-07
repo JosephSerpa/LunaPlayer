@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_bg" android:clipToOutline="true">
+    <ImageView android:id="@+id/bg_art" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:contentDescription="@null"/>
+    <ImageView android:id="@+id/bg_tint" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitXY" android:src="@drawable/widget_scrim_vertical" android:contentDescription="@null"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+        android:gravity="center_horizontal" android:padding="14dp">
+        <ImageView android:id="@+id/art" android:layout_width="wrap_content" android:layout_height="0dp" android:layout_weight="1" android:layout_gravity="center_horizontal" android:adjustViewBounds="true"
+            android:scaleType="fitCenter" android:src="@drawable/ic_w_note" android:contentDescription="@null"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="10dp">
+            <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center"
+                android:text="@string/widget_idle" android:textColor="#FFFFFFFF" android:textSize="17sp" android:textStyle="bold"
+                android:singleLine="true" android:ellipsize="end"/>
+            <TextView android:id="@+id/artist" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center"
+                android:text="@string/widget_idle_sub" android:textColor="#BFFFFFFF" android:textSize="13sp" android:singleLine="true" android:ellipsize="end"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+            android:orientation="horizontal" android:gravity="center_vertical">
+            <ImageView android:id="@+id/btn_like" android:layout_width="28dp" android:layout_height="28dp" android:layout_marginEnd="6dp"
+            android:padding="5dp" android:src="@drawable/ic_w_heart_border" android:tint="#FFFFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:id="@+id/star_1" android:layout_width="28dp" android:layout_height="28dp" 
+            android:padding="3dp" android:src="@drawable/ic_w_star" android:tint="#59FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/><ImageView android:id="@+id/star_2" android:layout_width="28dp" android:layout_height="28dp" 
+            android:padding="3dp" android:src="@drawable/ic_w_star" android:tint="#59FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/><ImageView android:id="@+id/star_3" android:layout_width="28dp" android:layout_height="28dp" 
+            android:padding="3dp" android:src="@drawable/ic_w_star" android:tint="#59FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/><ImageView android:id="@+id/star_4" android:layout_width="28dp" android:layout_height="28dp" 
+            android:padding="3dp" android:src="@drawable/ic_w_star" android:tint="#59FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/><ImageView android:id="@+id/star_5" android:layout_width="28dp" android:layout_height="28dp" 
+            android:padding="3dp" android:src="@drawable/ic_w_star" android:tint="#59FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:background="@drawable/widget_pill" android:orientation="horizontal" android:gravity="center_vertical" android:padding="5dp">
+            <ImageView android:layout_marginStart="0dp" android:id="@+id/btn_shuffle" android:layout_width="26dp" android:layout_height="26dp" 
+            android:padding="5dp" android:src="@drawable/ic_w_shuffle" android:tint="#99FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:layout_marginStart="4dp" android:id="@+id/btn_prev" android:layout_width="30dp" android:layout_height="30dp" 
+            android:padding="6dp" android:src="@drawable/ic_w_prev" android:tint="#FFFFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:layout_marginStart="4dp" android:id="@+id/btn_play" android:layout_width="44dp" android:layout_height="44dp"  android:background="@drawable/widget_play_bg"
+            android:padding="11dp" android:src="@drawable/ic_w_play" android:tint="#FF15131C" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:layout_marginStart="4dp" android:id="@+id/btn_next" android:layout_width="30dp" android:layout_height="30dp" 
+            android:padding="6dp" android:src="@drawable/ic_w_next" android:tint="#FFFFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+            <ImageView android:layout_marginStart="4dp" android:id="@+id/btn_repeat" android:layout_width="26dp" android:layout_height="26dp" 
+            android:padding="5dp" android:src="@drawable/ic_w_repeat" android:tint="#99FFFFFF" android:scaleType="fitCenter" android:contentDescription="@null"/>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

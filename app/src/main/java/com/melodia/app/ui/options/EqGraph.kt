@@ -1,7 +1,10 @@
 package com.melodia.app.ui.options
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Composable
@@ -15,6 +18,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -71,7 +75,9 @@ fun EqGraph(
     selected: Int,
     onSelect: (Int) -> Unit,
     onBandDrag: (index: Int, freqHz: Float, gainDb: Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Desplazamiento horizontal actual (la gráfica puede ser más ancha que la pantalla): fija las etiquetas de dB. */
+    scrollX: () -> Int = { 0 }
 ) {
     val accent = accentColor
     val inkC = ink
@@ -102,26 +108,24 @@ fun EqGraph(
                 }
             }
             .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { o ->
-                        val i = nearestBand(current, o, size.width.toFloat(), size.height.toFloat(), 56.dp.toPx())
-                        dragging = i
-                        if (i >= 0) selectCb(i)
-                    },
-                    onDragEnd = { dragging = -1 },
-                    onDragCancel = { dragging = -1 },
-                    onDrag = { change, _ ->
-                        val i = dragging
-                        if (i >= 0) {
-                            change.consume()
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            val x = change.position.x.coerceIn(0f, w)
-                            val y = change.position.y.coerceIn(0f, h)
-                            dragCb(i, xToFreq(x, w), yToGain(y, h))
-                        }
+                // Arrastra un punto solo si el dedo empieza cerca de uno; si no, no consume el gesto
+                // y la gráfica se desliza de lado.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val i = nearestBand(current, down.position, size.width.toFloat(), size.height.toFloat(), 56.dp.toPx())
+                    if (i < 0) return@awaitEachGesture
+                    dragging = i
+                    selectCb(i)
+                    val w = size.width.toFloat()
+                    val h = size.height.toFloat()
+                    drag(down.id) { change ->
+                        change.consume()
+                        val x = change.position.x.coerceIn(0f, w)
+                        val y = change.position.y.coerceIn(0f, h)
+                        dragCb(i, xToFreq(x, w), yToGain(y, h))
                     }
-                )
+                    dragging = -1
+                }
             }
     ) {
         val w = size.width
@@ -142,19 +146,23 @@ fun EqGraph(
             }
             drawText(
                 textMeasurer = measurer, text = text, style = labelStyle,
-                topLeft = Offset(6.dp.toPx(), (y + 2.dp.toPx()).coerceAtMost(h - 14.dp.toPx()))
+                topLeft = Offset(scrollX() + 6.dp.toPx(), (y + 2.dp.toPx()).coerceAtMost(h - 14.dp.toPx()))
             )
         }
         val gridHz = listOf(50f, 100f, 200f, 500f, 1000f, 2000f, 5000f, 10000f)
         for (f in gridHz) {
             val x = freqToX(f, w)
             val major = f == 100f || f == 1000f || f == 10000f
+            val labeled = true
             drawLine(
                 inkC.copy(alpha = if (major) 0.12f else 0.05f),
                 Offset(x, 0f), Offset(x, h), strokeWidth = 1.dp.toPx()
             )
-            if (major) {
-                val label = when (f) { 100f -> "100 Hz"; 1000f -> "1 kHz"; else -> "10 kHz" }
+            if (labeled) {
+                val label = when (f) {
+                    50f -> "50"; 100f -> "100 Hz"; 200f -> "200"; 500f -> "500"
+                    1000f -> "1 kHz"; 2000f -> "2k"; 5000f -> "5k"; else -> "10 kHz"
+                }
                 drawText(
                     textMeasurer = measurer, text = label, style = labelStyle,
                     topLeft = Offset(x + 4.dp.toPx(), h - 16.dp.toPx())
@@ -322,5 +330,83 @@ fun GainBar(
         drawCircle(tone.copy(alpha = 0.25f), r + 4.dp.toPx(), c)
         drawCircle(overloadTint(inkC, peakDb), r, c)
         drawCircle(inverseC, 3.5.dp.toPx(), c)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Vista general: toda la curva en una franja, con la parte visible marcada
+// ---------------------------------------------------------------------------
+
+/**
+ * Franja con la curva completa del ecualizador (20 Hz a 20 kHz). El recuadro marca la parte que se ve
+ * en la gráfica grande; tocar o arrastrar aquí la desplaza.
+ */
+@Composable
+fun EqOverview(
+    settings: EqSettings,
+    windowStart: Float,
+    windowSize: Float,
+    onCenter: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = accentColor
+    val inkC = ink
+    val total = remember(settings) { EqMath.totalCurve(settings, FREQS) }
+    val centerCb by rememberUpdatedState(onCenter)
+
+    Canvas(
+        modifier
+            .pointerInput(Unit) {
+                detectTapGestures { o -> centerCb((o.x / size.width).coerceIn(0f, 1f)) }
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures { change, _ ->
+                    change.consume()
+                    centerCb((change.position.x / size.width).coerceIn(0f, 1f))
+                }
+            }
+    ) {
+        val w = size.width
+        val h = size.height
+
+        for (f in listOf(100f, 1000f, 10000f)) {
+            val x = freqToX(f, w)
+            drawLine(inkC.copy(alpha = 0.1f), Offset(x, 0f), Offset(x, h), strokeWidth = 1.dp.toPx())
+        }
+        val zeroY = gainToY(0f, h)
+        drawLine(inkC.copy(alpha = 0.25f), Offset(0f, zeroY), Offset(w, zeroY), strokeWidth = 1.dp.toPx())
+
+        val line = Path()
+        for (k in FREQS.indices) {
+            val x = k / (FREQS.size - 1f) * w
+            val y = gainToY(total[k].toFloat().coerceIn(EQ_MIN_DB, EQ_MAX_DB), h)
+            if (k == 0) line.moveTo(x, y) else line.lineTo(x, y)
+        }
+        val fill = Path().apply {
+            addPath(line)
+            lineTo(w, zeroY)
+            lineTo(0f, zeroY)
+            close()
+        }
+        drawPath(fill, Brush.verticalGradient(listOf(accent.copy(alpha = 0.4f), accent.copy(alpha = 0.04f)), startY = 0f, endY = h))
+        drawPath(line, accent, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+
+        settings.bands.forEach { b ->
+            val p = Offset(freqToX(b.freqHz, w), gainToY(if (b.type.usesGain) b.gainDb else 0f, h))
+            drawCircle(accent, 3.dp.toPx(), p)
+        }
+
+        // Parte que se ve en la gráfica grande.
+        val x0 = windowStart * w
+        val ww = windowSize * w
+        drawRoundRect(
+            accent.copy(alpha = 0.14f), topLeft = Offset(x0, 0f), size = Size(ww, h),
+            cornerRadius = CornerRadius(12.dp.toPx())
+        )
+        drawRoundRect(
+            accent.copy(alpha = 0.75f), topLeft = Offset(x0 + 0.75.dp.toPx(), 0.75.dp.toPx()),
+            size = Size(ww - 1.5.dp.toPx(), h - 1.5.dp.toPx()),
+            cornerRadius = CornerRadius(12.dp.toPx()), style = Stroke(1.5.dp.toPx())
+        )
     }
 }

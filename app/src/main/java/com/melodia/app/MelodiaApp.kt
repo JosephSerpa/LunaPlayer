@@ -17,6 +17,8 @@ class MelodiaApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         Str.init(LocaleManager.wrap(this))
+        // Credenciales del servidor listas antes de la primera carátula o canción (widget, servicio…).
+        serverSettings.config.value
     }
 
     val repository: MusicRepository by lazy { MusicRepository(contentResolver) }
@@ -24,6 +26,14 @@ class MelodiaApp : Application(), ImageLoaderFactory {
 
     /** Ecualizador compartido entre la interfaz y el servicio de reproducción. */
     val equalizer: EqualizerEngine by lazy { EqualizerEngine(this) }
+
+    /** Listas, me gusta y estrellas iguales en todos los dispositivos (vía el servidor). */
+    val sync: com.melodia.app.data.server.ServerSync by lazy {
+        com.melodia.app.data.server.ServerSync(this, serverSettings, favorites, playlists)
+    }
+
+    /** Last.fm: scrobbles, me gusta → Loved y estadísticas. */
+    val lastfm: com.melodia.app.data.lastfm.LastFm by lazy { com.melodia.app.data.lastfm.LastFm(this, favorites) }
 
     /** Slow + reverb + tono. */
     val effects: EffectsEngine by lazy { EffectsEngine(this) }
@@ -33,6 +43,15 @@ class MelodiaApp : Application(), ImageLoaderFactory {
 
     /** Listas de reproducción. */
     val playlists: PlaylistStore by lazy { PlaylistStore(this) }
+
+    /** Cuántas veces se escuchó cada canción (para "Quick picks" y lo más escuchado). */
+    val stats: com.melodia.app.data.PlayStats by lazy { com.melodia.app.data.PlayStats(this) }
+
+    /** Preferencias de pantalla (pantalla dividida en horizontal). */
+    val ui: com.melodia.app.data.UiPrefs by lazy { com.melodia.app.data.UiPrefs(this) }
+
+    /** Distribución de la pantalla de inicio. */
+    val home: com.melodia.app.data.HomeLayoutStore by lazy { com.melodia.app.data.HomeLayoutStore(this) }
 
     /** Me gusta y estrellas. */
     val favorites: FavoritesStore by lazy { FavoritesStore(this) }
@@ -53,6 +72,8 @@ class MelodiaApp : Application(), ImageLoaderFactory {
             }
             // Navidrome suele pedir no guardar en caché: aquí sí conviene guardar.
             .respectCacheHeaders(false)
+            // Las direcciones del servidor se guardan sin credenciales: se firman aquí, al descargar.
+            .components { add(com.melodia.app.data.server.ServerAuthInterceptor()) }
             .crossfade(true)
             .build()
 }

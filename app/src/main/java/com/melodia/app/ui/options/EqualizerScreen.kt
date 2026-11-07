@@ -12,6 +12,15 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.flow.first
+import com.melodia.app.audio.BOOST_MAX_DB
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -112,7 +121,7 @@ fun EqualizerScreen(
     val band = settings.bands.getOrNull(selected)
     // Punto más alto de la curva total (con la ganancia general): si es muy alto, la barra se pone roja.
     val peakDb = remember(settings) {
-        EqMath.totalCurve(settings, EqMath.logFrequencies(120)).maxOrNull()?.toFloat() ?: 0f
+        (EqMath.totalCurve(settings, EqMath.logFrequencies(120)).maxOrNull()?.toFloat() ?: 0f) + settings.boostDb
     }
 
     Column(
@@ -177,13 +186,39 @@ fun EqualizerScreen(
 
             Spacer(Modifier.height(14.dp))
 
+            GlobalEqRow(eq)
+
             Column(Modifier.alpha(if (settings.enabled) 1f else 0.4f)) {
                 // Perfiles: predefinidos y propios, en un desplegable.
                 EqProfilePicker(settings = settings, eq = eq)
 
+                // Autoguardado: los cambios se guardan solos en el perfil propio en uso.
+                val autoSave by eq.autoSave.collectAsState()
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = autoSave,
+                        onCheckedChange = { eq.setAutoSave(it) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = accent,
+                            checkmarkColor = onAccent,
+                            uncheckedColor = ink.copy(alpha = 0.5f)
+                        )
+                    )
+                    Text(
+                        Str.get(R.string.eq_autosave),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = ink.copy(alpha = 0.85f)
+                    )
+                    HelpBadge(Str.get(R.string.eq_autosave_hint), Modifier.padding(start = 2.dp))
+                }
+
                 Spacer(Modifier.height(16.dp))
 
                 // Gráfica de la curva + barra vertical de la ganancia general (derecha)
+                val scroll = rememberScrollState()
                 Row(Modifier.fillMaxWidth().height(280.dp)) {
                     // Ganancia general: barra vertical a la izquierda, con el mismo alto que la gráfica.
                     GainBar(
@@ -193,19 +228,88 @@ fun EqualizerScreen(
                         modifier = Modifier.width(38.dp).fillMaxHeight()
                     )
                     Spacer(Modifier.width(8.dp))
-                    EqGraph(
-                        settings = settings,
-                        selected = selected,
-                        onSelect = { selectedRaw = it },
-                        onBandDrag = { i, hz, db -> eq.setFrequencyAndGain(i, hz, db) },
-                        modifier = Modifier
+                    // La gráfica mide el doble que el espacio visible: se desliza de lado para tener más control.
+                    BoxWithConstraints(
+                        Modifier
                             .weight(1f)
                             .fillMaxHeight()
                             // Recorta la cuadrícula a las esquinas redondeadas: nada sobresale.
                             .clip(RoundedCornerShape(22.dp))
                             .background(ink.copy(alpha = 0.07f))
-                    )
+                    ) {
+                        val viewport = maxWidth
+                        val density = LocalDensity.current
+                        val viewportPx = with(density) { viewport.toPx() }
+                        val margin = with(density) { 44.dp.toPx() }
+
+                        // Si el punto elegido queda fuera de la vista, se desliza hasta centrarlo.
+                        LaunchedEffect(selected, settings.bands.size, viewportPx) {
+                            val b = settings.bands.getOrNull(selected) ?: return@LaunchedEffect
+                            snapshotFlow { scroll.maxValue }.first { it in 1 until Int.MAX_VALUE }
+                            val lo = kotlin.math.log10(GRAPH_MIN_HZ)
+                            val hi = kotlin.math.log10(GRAPH_MAX_HZ)
+                            val x = ((kotlin.math.log10(b.freqHz.toDouble()) - lo) / (hi - lo) * viewportPx * 2f).toFloat()
+                            val v = scroll.value
+                            if (x < v + margin || x > v + viewportPx - margin) {
+                                scroll.animateScrollTo((x - viewportPx / 2f).toInt().coerceIn(0, scroll.maxValue))
+                            }
+                        }
+
+                        Box(Modifier.fillMaxSize().horizontalScroll(scroll)) {
+                            EqGraph(
+                                settings = settings,
+                                selected = selected,
+                                onSelect = { selectedRaw = it },
+                                onBandDrag = { i, hz, db -> eq.setFrequencyAndGain(i, hz, db) },
+                                modifier = Modifier.width(viewport * 2).fillMaxHeight(),
+                                scrollX = { scroll.value }
+                            )
+                        }
+
+                        // Indicador de dónde estás dentro de la gráfica.
+                        val maxV = scroll.maxValue
+                        val frac = if (maxV in 1 until Int.MAX_VALUE) scroll.value.toFloat() / maxV else 0f
+                        val trackInk = ink
+                        androidx.compose.foundation.Canvas(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 3.dp)
+                                .fillMaxWidth(0.3f)
+                                .height(3.dp)
+                        ) {
+                            drawRoundRect(trackInk.copy(alpha = 0.12f), size = size, cornerRadius = CornerRadius(size.height / 2f))
+                            val tw = size.width * 0.5f
+                            drawRoundRect(
+                                accent.copy(alpha = 0.8f),
+                                topLeft = Offset(frac * (size.width - tw), 0f),
+                                size = Size(tw, size.height),
+                                cornerRadius = CornerRadius(size.height / 2f)
+                            )
+                        }
+                    }
                 }
+
+                // Vista general de la curva completa, justo debajo de la gráfica.
+                Spacer(Modifier.height(10.dp))
+                val maxV = scroll.maxValue
+                val ready = maxV in 1 until Int.MAX_VALUE
+                EqOverview(
+                    settings = settings,
+                    windowStart = if (ready) scroll.value.toFloat() / maxV * 0.5f else 0f,
+                    windowSize = 0.5f,
+                    onCenter = { c ->
+                        if (ready) {
+                            val target = ((c - 0.25f).coerceIn(0f, 0.5f) / 0.5f * maxV)
+                            scroll.dispatchRawDelta(target - scroll.value)
+                        }
+                    },
+                    modifier = Modifier
+                        .padding(start = 46.dp)
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(ink.copy(alpha = 0.07f))
+                )
             }
         }
 
@@ -276,18 +380,6 @@ fun EqualizerScreen(
             )
 
             LabeledSlider(
-                label = Str.get(R.string.eq_freq),
-                valueText = fmtHz(band.freqHz) + " Hz",
-                fraction = logFraction(band.freqHz, GRAPH_MIN_HZ.toFloat(), GRAPH_MAX_HZ.toFloat()),
-                onFraction = { f ->
-                    val hz = fromLogFraction(f, GRAPH_MIN_HZ.toFloat(), GRAPH_MAX_HZ.toFloat())
-                    eq.setFrequency(selected, if (hz < 1000f) hz.roundToInt().toFloat() else (hz / 10f).roundToInt() * 10f)
-                },
-                accent = accent,
-                hint = Str.get(R.string.eq_freq_hint, fmtHz(GRAPH_MIN_HZ.toFloat()), fmtHz(GRAPH_MAX_HZ.toFloat()))
-            )
-
-            LabeledSlider(
                 label = Str.get(R.string.eq_q),
                 valueText = String.format(Locale.US, "Q %.2f", band.q),
                 fraction = logFraction(band.q, Q_MIN, Q_MAX),
@@ -311,6 +403,38 @@ fun EqualizerScreen(
                 .glass(RoundedCornerShape(32.dp), fill = 0.07f)
                 .padding(18.dp)
         ) {
+            // Volumen extra manual: puede saturar, lo decide quien usa la app.
+            LabeledSlider(
+                label = Str.get(R.string.eq_boost),
+                valueText = (if (settings.boostDb < 0.05f) "0" else "+" + fmtDb(settings.boostDb).removePrefix("+")) + " dB",
+                fraction = settings.boostDb / BOOST_MAX_DB,
+                onFraction = { f -> eq.setBoost((f * BOOST_MAX_DB * 2f).roundToInt() / 2f) },
+                accent = overloadTint(accent, peakDb),
+                hint = Str.get(R.string.eq_boost_hint)
+            )
+
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(Str.get(R.string.eq_limiter), style = MaterialTheme.typography.titleMedium, color = ink)
+                    Text(Str.get(R.string.eq_limiter_sub), style = MaterialTheme.typography.labelMedium, color = ink.copy(alpha = 0.6f))
+                }
+                Switch(
+                    checked = settings.limiter,
+                    onCheckedChange = { eq.setLimiter(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = accent,
+                        checkedBorderColor = Color.Transparent,
+                        uncheckedThumbColor = ink.copy(alpha = 0.7f),
+                        uncheckedTrackColor = ink.copy(alpha = 0.15f),
+                        uncheckedBorderColor = Color.Transparent
+                    )
+                )
+            }
+
             Text(
                 Str.get(R.string.eq_reset_all),
                 style = MaterialTheme.typography.titleMedium,
@@ -410,6 +534,7 @@ private fun fromLogFraction(f: Float, lo: Float, hi: Float): Float =
 private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
     val accent = accentColor
     val profiles by eq.profiles.collectAsState()
+    val assignments by eq.assignments.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
     val palette = LocalPalette.current
@@ -443,7 +568,18 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
                 MenuLabel(Str.get(R.string.eq_my_profiles))
                 profiles.forEach { p ->
                     DropdownMenuItem(
-                        text = { ProfileText(p.preset, settings.preset == p.preset) },
+                        text = {
+                            Column {
+                                ProfileText(p.preset, settings.preset == p.preset)
+                                assignments.values.firstOrNull { it.profile == p.preset }?.let {
+                                    Text(
+                                        Str.get(R.string.eq_assigned_to, it.deviceName),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = ink.copy(alpha = 0.5f)
+                                    )
+                                }
+                            }
+                        },
                         onClick = { eq.applyProfile(p); menuOpen = false },
                         trailingIcon = {
                             Icon(
@@ -466,11 +602,9 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
     }
 
     if (naming) {
-        PlaylistNameDialog(
-            title = Str.get(R.string.eq_save_profile),
+        SaveProfileDialog(
+            eq = eq,
             initial = if (profiles.none { it.preset == settings.preset }) "" else settings.preset,
-            confirm = Str.get(R.string.save),
-            onConfirm = { eq.saveProfile(it) },
             onDismiss = { naming = false }
         )
     }
@@ -569,6 +703,156 @@ private fun FilterTypePicker(selected: FilterType, onSelect: (FilterType) -> Uni
                     text = { ProfileText(type.label, type == selected) },
                     trailingIcon = { FilterMiniGraph(type) },
                     onClick = { onSelect(type); menuOpen = false }
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ecualizador global y perfiles por dispositivo
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun GlobalEqRow(eq: EqualizerEngine) {
+    val accent = accentColor
+    val on by eq.global.collectAsState()
+    var warn by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Row(
+        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(Str.get(R.string.eq_global_title), style = MaterialTheme.typography.titleMedium, color = ink)
+            Text(Str.get(R.string.eq_global_sub), style = MaterialTheme.typography.labelMedium, color = ink.copy(alpha = 0.6f))
+        }
+        HelpBadge(Str.get(R.string.eq_global_help), Modifier.padding(horizontal = 6.dp))
+        Switch(
+            checked = on,
+            onCheckedChange = { want ->
+                if (want) warn = true else eq.setGlobal(false)
+            },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = accent,
+                checkedBorderColor = Color.Transparent,
+                uncheckedThumbColor = ink.copy(alpha = 0.7f),
+                uncheckedTrackColor = ink.copy(alpha = 0.15f),
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
+    }
+    if (warn) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { warn = false },
+            containerColor = LocalPalette.current.bg,
+            title = { Text(Str.get(R.string.eq_global_warn_title), color = ink) },
+            text = { Text(Str.get(R.string.eq_global_warn), color = ink.copy(alpha = 0.85f)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    warn = false
+                    if (!eq.setGlobal(true)) {
+                        android.widget.Toast.makeText(context, Str.get(R.string.eq_global_fail), android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }) { Text(Str.get(R.string.eq_global_activate), color = accent) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { warn = false }) {
+                    Text(Str.get(R.string.cancel), color = ink)
+                }
+            }
+        )
+    }
+}
+
+/** Guardar perfil: nombre (por defecto el del dispositivo elegido) y, opcionalmente, a qué dispositivo asignarlo. */
+@Composable
+private fun SaveProfileDialog(eq: EqualizerEngine, initial: String, onDismiss: () -> Unit) {
+    val accent = accentColor
+    val palette = LocalPalette.current
+    val devices by eq.devices.collectAsState()
+    var name by remember { mutableStateOf(initial) }
+    var picked by remember { mutableStateOf<com.melodia.app.audio.OutputDevice?>(null) }
+    // Mientras el nombre sea el automático (o esté vacío), cambia con el dispositivo; si se edita, se respeta.
+    var auto by remember { mutableStateOf(initial.isBlank()) }
+    val shape = RoundedCornerShape(28.dp)
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(palette.bg.copy(alpha = 0.97f), shape)
+                .glass(shape, fill = 0.05f, border = 0.14f)
+                .verticalScroll(rememberScrollState())
+                .padding(22.dp)
+        ) {
+            Text(Str.get(R.string.eq_save_profile), style = MaterialTheme.typography.titleLarge, color = ink)
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.OutlinedTextField(
+                value = name,
+                onValueChange = { name = it; auto = false },
+                placeholder = { Text(Str.get(R.string.eq_profile_name)) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = accent,
+                    unfocusedBorderColor = ink.copy(alpha = 0.2f),
+                    focusedTextColor = ink, unfocusedTextColor = ink, cursorColor = accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(Str.get(R.string.eq_assign_device), style = MaterialTheme.typography.labelLarge, color = ink.copy(alpha = 0.7f))
+                HelpBadge(Str.get(R.string.eq_assign_hint), Modifier.padding(start = 6.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            val options = listOf<com.melodia.app.audio.OutputDevice?>(null) + devices
+            options.forEach { d ->
+                val sel = picked?.key == d?.key
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                        .pressable {
+                            picked = d
+                            if (auto || name.isBlank()) { name = d?.name.orEmpty(); auto = true }
+                        }
+                        .glass(RoundedCornerShape(16.dp), fill = if (sel) 0.16f else 0.06f, border = if (sel) 0.4f else 0.12f)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        d?.name ?: Str.get(R.string.eq_assign_none),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (sel) accent else ink,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            if (devices.isEmpty()) {
+                Text(Str.get(R.string.eq_assign_no_devices), style = MaterialTheme.typography.labelMedium, color = ink.copy(alpha = 0.5f))
+            }
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    Str.get(R.string.cancel),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = ink,
+                    modifier = Modifier.weight(1f).pressable(onDismiss)
+                        .glass(RoundedCornerShape(50), fill = 0.08f, border = 0.16f).padding(vertical = 12.dp)
+                )
+                Text(
+                    Str.get(R.string.save),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = accent.onAccent(),
+                    modifier = Modifier.weight(1f)
+                        .pressable { if (name.isNotBlank()) { eq.saveProfile(name, picked); onDismiss() } }
+                        .background(accent.copy(alpha = if (name.isNotBlank()) 1f else 0.4f), RoundedCornerShape(50))
+                        .padding(vertical = 12.dp)
                 )
             }
         }

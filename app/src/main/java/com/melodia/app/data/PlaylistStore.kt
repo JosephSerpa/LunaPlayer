@@ -14,7 +14,9 @@ import org.json.JSONObject
 data class Playlist(
     val id: Long,
     val name: String,
-    val songIds: List<Long> = emptyList()
+    val songIds: List<Long> = emptyList(),
+    /** Id de la misma lista en el servidor (si se sincroniza). */
+    val serverId: String? = null
 )
 
 /** Guarda las listas de reproducción en el teléfono. */
@@ -44,6 +46,11 @@ class PlaylistStore(context: Context) {
 
     fun remove(id: Long, songId: Long) = edit(id) { p -> p.copy(songIds = p.songIds - songId) }
 
+    /** Sustituye todas las listas (lo usa la sincronización con el servidor). */
+    fun replaceAll(list: List<Playlist>) {
+        if (list != _playlists.value) update { list }
+    }
+
     private fun edit(id: Long, change: (Playlist) -> Playlist) =
         update { list -> list.map { if (it.id == id) change(it) else it } }
 
@@ -57,6 +64,7 @@ class PlaylistStore(context: Context) {
                     .put("id", p.id)
                     .put("name", p.name)
                     .put("songs", JSONArray(p.songIds))
+                    .apply { p.serverId?.let { put("sid", it) } }
             )
         }
         prefs.edit().putString(KEY, json.toString()).apply()
@@ -70,7 +78,8 @@ class PlaylistStore(context: Context) {
             Playlist(
                 id = o.getLong("id"),
                 name = o.optString("name"),
-                songIds = List(songs.length()) { k -> songs.getLong(k) }
+                songIds = List(songs.length()) { k -> songs.getLong(k) },
+                serverId = o.optString("sid").ifBlank { null }
             )
         }
     }.getOrDefault(emptyList())

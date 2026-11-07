@@ -6,10 +6,13 @@ import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -59,8 +62,21 @@ class PlaybackService : MediaSessionService() {
             .setConstantBitrateSeekingEnabled(true)
             .setConstantBitrateSeekingAlwaysEnabled(true)
 
+        // Empieza a sonar con muy poco cargado (0,5 s) y sigue llenando por detrás; lo que baja del
+        // servidor se guarda en disco (StreamCache) para repetirlo al instante.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 20_000,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         val player = ExoPlayer.Builder(this, renderersFactory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this, extractors))
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(StreamCache.playerFactory(this), extractors))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -80,9 +96,83 @@ class PlaybackService : MediaSessionService() {
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        // Wi-Fi activo solo con música de la nube; y si la conexión falla, se reintenta sola.
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = updateWakeMode(player)
+            override fun onPlayerError(error: PlaybackException) = recover(player, error)
+        })
+        // Widget de la pantalla principal: se actualiza al cambiar la canción o al pausar.
+        player.addListener(object : Player.Listener {
+            override fun onEvents(p: Player, events: Player.Events) {
+                if (events.containsAny(
+                        Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED,
+                        Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_PLAYBACK_STATE_CHANGED,
+                        Player.EVENT_TIMELINE_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED
+                    )
+                ) com.melodia.app.widget.PlayerWidget.push(this@PlaybackService, p)
+            }
+        })
+        // Carátulas de la notificación: las direcciones del servidor se firman al descargarlas.
+        val bitmaps = androidx.media3.session.CacheBitmapLoader(
+            androidx.media3.datasource.DataSourceBitmapLoader(
+                com.google.common.util.concurrent.MoreExecutors.listeningDecorator(
+                    java.util.concurrent.Executors.newSingleThreadExecutor()
+                ),
+                StreamCache.artFactory(this)
+            )
+        )
+        updateWakeMode(player)
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(openPlayer)
+            .setBitmapLoader(bitmaps)
             .build()
+    }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var retriedUid: String? = null
+    private var retriedAt = 0L
+
+    private fun isRemote(item: MediaItem?): Boolean {
+        val scheme = item?.localConfiguration?.uri?.scheme
+        return scheme == "http" || scheme == "https"
+    }
+
+    /** El bloqueo de Wi-Fi solo hace falta con música de la nube (la del teléfono no usa la red). */
+    private fun updateWakeMode(p: ExoPlayer) {
+        p.setWakeMode(if (isRemote(p.currentMediaItem)) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
+    }
+
+    /**
+     * Fallo de red con una canción de la nube: antes el reproductor se quedaba parado hasta cambiar de
+     * canción. Ahora, cerca del final (el servidor anunció un poco más de lo que había) pasa a la siguiente;
+     * si no, reintenta una vez desde el mismo punto.
+     */
+    private fun recover(p: ExoPlayer, error: PlaybackException) {
+        val item = p.currentMediaItem ?: return
+        if (!isRemote(item) || error.errorCode !in 2000..2999) return
+        val uid = item.mediaMetadata.extras?.getString("melodia.uid") ?: item.mediaId
+        val pos = p.currentPosition
+        val dur = item.mediaMetadata.durationMs?.takeIf { it > 0 } ?: p.duration
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (dur > 0 && pos >= dur - 5_000) {
+            if (p.repeatMode == Player.REPEAT_MODE_ONE) {
+                p.seekTo(0)
+                p.prepare()
+            } else if (p.hasNextMediaItem()) {
+                p.seekToNextMediaItem()
+                p.prepare()
+            }
+            return
+        }
+        if (uid == retriedUid && now - retriedAt < 30_000) return // ya se reintentó: no entra en bucle
+        retriedUid = uid
+        retriedAt = now
+        handler.postDelayed({
+            if (p.playbackState == Player.STATE_IDLE && p.currentMediaItem?.mediaId == item.mediaId) {
+                p.seekTo(pos)
+                p.prepare()
+            }
+        }, 1_500)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -98,6 +188,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        com.melodia.app.widget.PlayerWidget.stopped(this)
         mediaSession?.run {
             player.release()
             release()

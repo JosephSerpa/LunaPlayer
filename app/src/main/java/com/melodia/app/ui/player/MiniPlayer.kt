@@ -14,6 +14,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -69,6 +78,11 @@ fun MiniPlayer(
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onPrevious: () -> Unit = {},
+    /** Jalar la barra hacia arriba abre el reproductor siguiendo al dedo: empieza, dy (positivo = abajo), termina con velocidad. */
+    onDragStart: () -> Unit = {},
+    onDrag: (Float) -> Unit = {},
+    onDragEnd: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val current = state.current ?: return
@@ -79,13 +93,53 @@ fun MiniPlayer(
     val origin = LocalCoverOrigin.current
     val density = LocalDensity.current
     val artBounds = remember { arrayOfNulls<Rect>(1) }
+    // Deslizar la píldora: a la izquierda → siguiente; a la derecha → anterior.
+    val scope = rememberCoroutineScope()
+    val slide = remember { Animatable(0f) }
+    val nextCb by rememberUpdatedState(onNext)
+    val prevCb by rememberUpdatedState(onPrevious)
+    val startCb by rememberUpdatedState(onDragStart)
+    val dragCb by rememberUpdatedState(onDrag)
+    val endCb by rememberUpdatedState(onDragEnd)
 
     Column(
         modifier = modifier
+            .widthIn(max = 600.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp)
             .fillMaxWidth()
+            .graphicsLayer { translationX = slide.value }
+            .pointerInput(Unit) {
+                val trigger = 64.dp.toPx()
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragCancel = { scope.launch { slide.animateTo(0f, tween(180)) } },
+                    onDragEnd = {
+                        val t = total
+                        if (t <= -trigger) nextCb() else if (t >= trigger) prevCb()
+                        scope.launch { slide.animateTo(0f, tween(220)) }
+                    }
+                ) { change, delta ->
+                    change.consume()
+                    total += delta
+                    // La píldora acompaña al dedo con resistencia.
+                    scope.launch { slide.snapTo((total * 0.45f).coerceIn(-140f, 140f)) }
+                }
+            }
             .onGloballyPositioned { origin.miniPill = it.boundsInRoot() }
             .shadow(20.dp, shape, ambientColor = accent, spotColor = accent)
+            .draggable(
+                orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
+                state = androidx.compose.foundation.gestures.rememberDraggableState { dy -> dragCb(dy) },
+                onDragStarted = {
+                    // Igual que al tocar: la carátula del reproductor sale de la de la barra.
+                    origin.rect = artBounds[0]
+                    origin.openedFromMini = true
+                    origin.radius = with(density) { 15.dp.toPx() }
+                    startCb()
+                },
+                onDragStopped = { v -> endCb(v) }
+            )
             .pressable {
                 // La carátula del reproductor "sale" desde la del mini-reproductor.
                 origin.rect = artBounds[0]
@@ -120,13 +174,15 @@ fun MiniPlayer(
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.onGloballyPositioned { origin.miniTitle = it.boundsInRoot() }
                     )
                     Text(
                         artist,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.onGloballyPositioned { origin.miniArtist = it.boundsInRoot() }
                     )
                 }
             }

@@ -1,5 +1,17 @@
 package com.melodia.app.ui.player
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import kotlin.math.cos
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.melodia.app.ui.components.BurstKind
+import com.melodia.app.ui.components.burst
+import com.melodia.app.ui.components.rememberBurst
 import com.melodia.app.Str
 import com.melodia.app.R
 
@@ -33,6 +45,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -154,6 +167,8 @@ internal class CoordsHolder {
     var box: LayoutCoordinates? = null
     var play: Rect? = null
     var next: Rect? = null
+    var title: Rect? = null
+    var artist: Rect? = null
 }
 
 internal fun lerpColor(a: Color, b: Color, t: Float): Color {
@@ -173,7 +188,9 @@ internal fun FlyingCover(
     isPlaying: Boolean,
     /** Desplazamiento horizontal al deslizar para cambiar de canción. */
     slideX: Float = 0f,
-    slideWidth: Float = 1f
+    slideWidth: Float = 1f,
+    /** 0 = vertical · 1 = horizontal. En los dos casos el borde se funde con el fondo. */
+    land: () -> Float = { 0f }
 ) {
     val density = LocalDensity.current
     val context = LocalContext.current
@@ -208,9 +225,12 @@ internal fun FlyingCover(
                     drawContent()
                     if (feather > 0.001f) {
                         // Borde en degradado suave (curva "smoothstep"): no se nota dónde empieza.
-                        val stops = featherStops(feather)
-                        drawRect(Brush.horizontalGradient(*stops), blendMode = BlendMode.DstIn)
-                        drawRect(Brush.verticalGradient(*stops), blendMode = BlendMode.DstIn)
+                        // En horizontal también se funde con el fondo, igual que en vertical.
+                        val fl = feather
+                        val fx = featherStops(fl, fl)
+                        val fy = featherStops(fl, fl)
+                        drawRect(Brush.horizontalGradient(*fx), blendMode = BlendMode.DstIn)
+                        drawRect(Brush.verticalGradient(*fy), blendMode = BlendMode.DstIn)
                     }
                 }
                 .clip(RoundedCornerShape(radius))
@@ -227,18 +247,18 @@ internal fun FlyingCover(
 }
 
 /** Paradas de un degradado de borde: transparente en la orilla y opaco con curva suave hacia dentro. */
-private fun featherStops(feather: Float): Array<Pair<Float, Color>> {
+private fun featherStops(start: Float, end: Float): Array<Pair<Float, Color>> {
     val steps = 10
     val list = ArrayList<Pair<Float, Color>>()
     for (i in 0..steps) {
         val t = i / steps.toFloat()
-        val a = t * t * (3f - 2f * t)
-        list.add(feather * t to Color.Black.copy(alpha = a))
+        val a = if (start < 0.001f) 1f else t * t * (3f - 2f * t)
+        list.add(start * t to Color.Black.copy(alpha = a))
     }
     for (i in steps downTo 0) {
         val t = i / steps.toFloat()
-        val a = t * t * (3f - 2f * t)
-        list.add((1f - feather * t) to Color.Black.copy(alpha = a))
+        val a = if (end < 0.001f) 1f else t * t * (3f - 2f * t)
+        list.add((1f - end * t) to Color.Black.copy(alpha = a))
     }
     return list.toTypedArray()
 }
@@ -267,15 +287,21 @@ internal fun MarkRow(
         // Corazón con "latido" al marcarlo.
         val pop = remember { Animatable(1f) }
         val scope = rememberCoroutineScope()
+        val heartBurst = rememberBurst()
+        val broken = ink.copy(alpha = 0.55f)
         Box(
             Modifier
                 .size(44.dp)
+                // Partículas al marcar; corazón roto al quitarlo (antes del recorte del botón, para que se salgan).
+                .burst(heartBurst, accent, broken)
                 .pressable {
+                    val wasLiked = mark.liked
                     onToggleLike()
                     scope.launch {
                         pop.snapTo(0.7f)
                         pop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = Spring.StiffnessMedium))
                     }
+                    scope.launch { heartBurst.play(if (wasLiked) BurstKind.BROKEN else BurstKind.HEART) }
                 }
                 .glass(CircleShape, fill = if (mark.liked) 0.16f else 0.08f),
             contentAlignment = Alignment.Center
@@ -306,6 +332,7 @@ internal fun MarkRow(
         }
 
         // Estrellas (tocar la misma cantidad otra vez las quita).
+        val starBursts = List(5) { rememberBurst() }
         Row(
             Modifier.weight(1f),
             horizontalArrangement = Arrangement.Center,
@@ -323,8 +350,16 @@ internal fun MarkRow(
                     Str.plural(R.plurals.stars_count, i),
                     tint = if (on) accent else ink.copy(alpha = 0.45f),
                     modifier = Modifier
-                        .size(28.dp)
-                        .pressable { onRate(i) }
+                        // Las 5 estrellas siempre del mismo tamaño, aunque la pantalla sea angosta.
+                        .weight(1f, fill = false)
+                        .widthIn(max = 30.dp)
+                        .aspectRatio(1f)
+                        .burst(starBursts[i - 1], accent)
+                        .pressable {
+                            val clearing = mark.rating == i
+                            onRate(i)
+                            if (!clearing) scope.launch { starBursts[i - 1].play(BurstKind.STAR) }
+                        }
                         .padding(3.dp)
                         .graphicsLayer { scaleX = s; scaleY = s }
                 )
@@ -351,30 +386,8 @@ internal fun MarkRow(
 
         Spacer(Modifier.width(6.dp))
 
-        // Agujero negro: tocar enciende/apaga Slow + Reverb; mantener presionado abre su menú.
-        val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-        Box(
-            Modifier
-                .size(44.dp)
-                .pressableWithLongClick(
-                    onLongClick = {
-                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        onOpenFx()
-                    },
-                    onClick = onToggleFx
-                )
-                .then(
-                    if (fxActive) Modifier.background(accent, CircleShape)
-                    else Modifier.glass(CircleShape, fill = 0.08f)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            BlackHoleIcon(
-                active = fxActive,
-                tint = if (fxActive) accent.onAccent() else ink,
-                size = 28.dp
-            )
-        }
+        // Agujero negro: tocar enciende/apaga Slow + Reverb; mantener presionado y soltar abre su menú.
+        FxHoleButton(fxActive = fxActive, accent = accent, onToggle = onToggleFx, onOpenMenu = onOpenFx)
     }
 }
 
@@ -422,5 +435,142 @@ internal fun MorphIcon(
         contentAlignment = Alignment.Center
     ) {
         Icon(icon, null, tint = ink.copy(alpha = alpha), modifier = Modifier.size(iconSize))
+    }
+}
+
+
+/**
+ * Botón del agujero negro. Un toque enciende o apaga el efecto. Al mantenerlo presionado aparece,
+ * sobre el dedo, un agujero negro que crece y tiembla con un anillo que se va llenando: avisa que,
+ * si se suelta con el anillo completo, se abre el menú. El menú se abre al SOLTAR, no al presionar;
+ * si se desliza el dedo fuera del botón, no pasa nada.
+ */
+@Composable
+private fun FxHoleButton(fxActive: Boolean, accent: Color, onToggle: () -> Unit, onOpenMenu: () -> Unit) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val charge = remember { Animatable(0f) }
+    var holding by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf(false) }
+    val toggleCb by rememberUpdatedState(onToggle)
+    val openCb by rememberUpdatedState(onOpenMenu)
+    val pressScale by animateFloatAsState(
+        if (holding) 0.92f else 1f,
+        spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
+        label = "holePress"
+    )
+    Box(
+        Modifier
+            .size(44.dp)
+            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    holding = true
+                    armed = false
+                    // Un toque rápido no muestra nada: el aviso empieza tras un instante.
+                    val charging = scope.launch {
+                        kotlinx.coroutines.delay(130)
+                        charge.snapTo(0f)
+                        charge.animateTo(1f, tween(480, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+                        armed = true
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    }
+                    val up = waitForUpOrCancellation()
+                    charging.cancel()
+                    val open = armed
+                    holding = false
+                    armed = false
+                    scope.launch { charge.animateTo(0f, tween(180)) }
+                    if (up != null) {
+                        up.consume()
+                        if (open) openCb() else toggleCb()
+                    }
+                }
+            }
+            .semantics {
+                onClick { toggleCb(); true }
+                onLongClick { openCb(); true }
+            }
+            .then(
+                if (fxActive) Modifier.background(accent, CircleShape)
+                else Modifier.glass(CircleShape, fill = 0.08f)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        BlackHoleIcon(
+            active = fxActive,
+            tint = if (fxActive) accent.onAccent() else ink,
+            size = 28.dp
+        )
+        if (charge.value > 0.001f) {
+            val lift = with(density) { (HOLE_POP + 10.dp).roundToPx() }
+            androidx.compose.ui.window.Popup(
+                alignment = Alignment.TopCenter,
+                offset = IntOffset(0, -lift),
+                properties = androidx.compose.ui.window.PopupProperties(focusable = false, clippingEnabled = false)
+            ) {
+                HoleCharge(progress = charge.value, armed = armed, accent = accent)
+            }
+        }
+    }
+}
+
+private val HOLE_POP = 96.dp
+
+/** El agujero que crece y tiembla sobre el dedo; el anillo se llena hasta que se puede soltar. */
+@Composable
+private fun HoleCharge(progress: Float, armed: Boolean, accent: Color) {
+    val t = rememberInfiniteTransition(label = "holeShake")
+    val time by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "holeTime")
+    val pulse by animateFloatAsState(if (armed) 1f else 0f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMediumLow), label = "holeArmed")
+    // Crece con un pequeño rebote al final.
+    val grow = 1f - (1f - progress) * (1f - progress)
+    val scale = 0.35f + 0.65f * grow + 0.08f * pulse
+    Box(
+        Modifier
+            .size(HOLE_POP)
+            .graphicsLayer {
+                val amp = (0.6f + 2.4f * progress + 0.8f * pulse) * density
+                val k = time * 2f * PI.toFloat()
+                // Temblor: varias frecuencias mezcladas para que no parezca un vaivén regular.
+                translationX = (sin(k * 23f) * 0.7f + sin(k * 37f) * 0.3f) * amp
+                translationY = (cos(k * 29f) * 0.7f + sin(k * 41f) * 0.3f) * amp
+                scaleX = scale
+                scaleY = scale
+                alpha = (progress * 2.5f).coerceAtMost(1f)
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f
+            // Halo del color del tema y fondo oscuro, para que se vea sobre cualquier carátula.
+            drawCircle(
+                Brush.radialGradient(
+                    listOf(accent.copy(alpha = 0.45f * progress), accent.copy(alpha = 0.12f * progress), Color.Transparent),
+                    center = c, radius = r
+                ),
+                radius = r, center = c
+            )
+            drawCircle(Color.Black.copy(alpha = 0.55f), radius = r * 0.62f, center = c)
+            // Anillo de carga.
+            val sw = 3.dp.toPx()
+            val rr = r * 0.78f
+            drawCircle(Color.White.copy(alpha = 0.16f), radius = rr, center = c, style = Stroke(sw))
+            drawArc(
+                accent, startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                topLeft = Offset(c.x - rr, c.y - rr), size = Size(rr * 2, rr * 2),
+                style = Stroke(sw, cap = StrokeCap.Round)
+            )
+        }
+        // El agujero gira más rápido a medida que se carga.
+        BlackHoleIcon(
+            active = true,
+            tint = accent,
+            size = 52.dp,
+            modifier = Modifier.graphicsLayer { rotationZ = 220f * progress + 360f * time * progress }
+        )
     }
 }

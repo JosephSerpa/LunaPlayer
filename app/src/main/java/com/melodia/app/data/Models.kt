@@ -16,7 +16,11 @@ data class Song(
     val path: String = "",
     val sizeBytes: Long = 0L,
     /** Id en el servidor Subsonic/Navidrome; null si la canción está en el teléfono. */
-    val remoteId: String? = null
+    val remoteId: String? = null,
+    /** Género (etiqueta del archivo o del servidor); vacío si no se conoce. */
+    val genre: String = "",
+    /** Año del disco (0 si no se conoce). */
+    val year: Int = 0
 ) {
     val isRemote: Boolean get() = remoteId != null
 }

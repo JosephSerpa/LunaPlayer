@@ -14,8 +14,18 @@ android {
         applicationId = "com.lunaplayer.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 104
-        versionName = "1.9.9"
+        versionCode = 236
+        versionName = "2.6.7"
+
+        // Clave de la API de Last.fm (https://www.last.fm/api/account/create). Se lee de local.properties
+        // (lastfm.key / lastfm.secret) o de las propiedades de Gradle; sin ellas, cada usuario puede poner la suya en Ajustes.
+        val localProps = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) f.inputStream().use { load(it) }
+        }
+        fun prop(name: String) = (localProps.getProperty(name) ?: (project.findProperty(name) as String?) ?: "").replace("\"", "")
+        buildConfigField("String", "LASTFM_KEY", "\"${prop("lastfm.key")}\"")
+        buildConfigField("String", "LASTFM_SECRET", "\"${prop("lastfm.secret")}\"")
     }
 
     // Firma de producción: lee keystore.properties (no se sube a Git). Sin ese archivo,
@@ -58,6 +68,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

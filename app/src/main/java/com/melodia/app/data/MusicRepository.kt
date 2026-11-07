@@ -17,7 +17,8 @@ class MusicRepository(private val resolver: ContentResolver) {
 
     suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
-        val projection = arrayOf(
+        val withGenre = android.os.Build.VERSION.SDK_INT >= 30
+        val projection = listOfNotNull(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
@@ -25,8 +26,10 @@ class MusicRepository(private val resolver: ContentResolver) {
             MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DATA,
-            MediaStore.Audio.Media.SIZE
-        )
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.YEAR,
+            if (withGenre) MediaStore.Audio.Media.GENRE else null
+        ).toTypedArray()
         val selection =
             "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 30000"
         val sort = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
@@ -43,6 +46,8 @@ class MusicRepository(private val resolver: ContentResolver) {
             val durCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dataCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val genreCol = if (withGenre) c.getColumnIndex(MediaStore.Audio.Media.GENRE) else -1
+            val yearCol = c.getColumnIndex(MediaStore.Audio.Media.YEAR)
 
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
@@ -59,7 +64,9 @@ class MusicRepository(private val resolver: ContentResolver) {
                     ),
                     artUri = ContentUris.withAppendedId(albumArtBase, albumId),
                     path = c.getString(dataCol).orEmpty(),
-                    sizeBytes = c.getLong(sizeCol)
+                    sizeBytes = c.getLong(sizeCol),
+                    genre = if (genreCol >= 0) c.getString(genreCol)?.trim().orEmpty() else "",
+                    year = if (yearCol >= 0) c.getInt(yearCol).let { y -> if (y in 1000..2999) y else 0 } else 0
                 )
             }
         }

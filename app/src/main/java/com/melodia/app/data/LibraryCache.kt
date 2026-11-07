@@ -39,7 +39,9 @@ class LibraryCache(context: Context) {
                 val path = input.readUTF()
                 val size = input.readLong()
                 val remote = input.readUTF().ifEmpty { null }
-                songs += Song(id, title, artist, album, albumId, duration, uri, artUri, path, size, remote)
+                val genre = input.readUTF()
+                val year = input.readInt()
+                songs += Song(id, title, artist, album, albumId, duration, uri, artUri, path, size, remote, genre, year)
             }
             Snapshot(songs, savedAt, tag)
         }
@@ -65,6 +67,8 @@ class LibraryCache(context: Context) {
                     out.writeUTF(s.path.take(MAX))
                     out.writeLong(s.sizeBytes)
                     out.writeUTF(s.remoteId.orEmpty())
+                    out.writeUTF(s.genre.take(MAX))
+                    out.writeInt(s.year)
                 }
             }
             // Se reemplaza de golpe: nunca queda un archivo a medio escribir.
@@ -77,7 +81,7 @@ class LibraryCache(context: Context) {
     }
 
     private companion object {
-        const val VERSION = 1
+        const val VERSION = 3
         /** writeUTF admite hasta 64 KB; los textos se recortan por seguridad. */
         const val MAX = 4000
     }

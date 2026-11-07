@@ -185,7 +185,26 @@ fun FxPanel(
             )
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
+
+        // Velocidad y tono unidos: al mover uno, el otro lo acompaña (más rápido de ajustar).
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(Str.get(R.string.fx_link), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            HelpBadge(Str.get(R.string.fx_link_help), Modifier.padding(start = 2.dp))
+            Spacer(Modifier.weight(1f))
+            Switch(
+                checked = fx.linked,
+                onCheckedChange = effects::setLinked,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = accent,
+                    checkedBorderColor = Color.Transparent,
+                    uncheckedThumbColor = ink.copy(alpha = 0.7f),
+                    uncheckedTrackColor = ink.copy(alpha = 0.15f),
+                    uncheckedBorderColor = Color.Transparent
+                )
+            )
+        }
 
         FxSlider(
             label = Str.get(R.string.fx_speed),

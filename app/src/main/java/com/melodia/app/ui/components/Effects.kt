@@ -309,19 +309,23 @@ fun EqualizerBars(
     modifier: Modifier = Modifier.size(18.dp),
     bars: Int = 4
 ) {
-    val t = rememberInfiniteTransition(label = "eq")
-    val durations = listOf(520, 700, 610, 480, 760, 560)
-    val values = List(bars) { i ->
-        t.animateFloat(
-            initialValue = 0.25f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                tween(durations[i % durations.size], easing = FastOutSlowInEasing),
-                RepeatMode.Reverse
-            ),
-            label = "bar$i"
-        )
-    }
     val level by animateFloatAsState(if (active) 1f else 0f, tween(300), label = "eqLevel")
+    // En pausa (ya bajadas) las barras quedan quietas: no se redibujan 60 veces por segundo.
+    val animating = active || level > 0.001f
+    val values: List<androidx.compose.runtime.State<Float>> = if (animating) {
+        val t = rememberInfiniteTransition(label = "eq")
+        val durations = listOf(520, 700, 610, 480, 760, 560)
+        List(bars) { i ->
+            t.animateFloat(
+                initialValue = 0.25f, targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    tween(durations[i % durations.size], easing = FastOutSlowInEasing),
+                    RepeatMode.Reverse
+                ),
+                label = "bar$i"
+            )
+        }
+    } else remember(bars) { List(bars) { androidx.compose.runtime.mutableFloatStateOf(0.25f) } }
     Canvas(modifier) {
         val barW = size.width / (bars * 2f - 1f)
         for (i in 0 until bars) {

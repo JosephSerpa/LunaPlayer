@@ -111,6 +111,10 @@ class PlayerController(context: Context) {
     private val _position = MutableStateFlow(0L)
     val position: StateFlow<Long> = _position.asStateFlow()
 
+    /** Hasta dónde está descargada la canción (ms): para la barra de carga de la música en la nube. */
+    private val _buffered = MutableStateFlow(0L)
+    val buffered: StateFlow<Long> = _buffered.asStateFlow()
+
     /** Cola de reproducción actual (en el orden de la lista). */
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
@@ -131,12 +135,17 @@ class PlayerController(context: Context) {
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             sync(player)
-            if (events.contains(Player.EVENT_TIMELINE_CHANGED)) updateQueue(player)
+            if (events.contains(Player.EVENT_TIMELINE_CHANGED)) {
+                updateQueue(player)
+                prefetchUpcoming()
+            }
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            prefetchUpcoming()
             // Modo luna: al pasar a otra canción, empieza en su mejor parte (si la tiene).
             // Al cargar una cola nueva (PLAYLIST_CHANGED) ya se pide en play(); en repetir no aplica.
             if (mediaItem == null ||
+                mediaItem.mediaMetadata.extras?.getBoolean(EXTRA_CLIP) == true ||
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED ||
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
             ) return
@@ -193,7 +202,7 @@ class PlayerController(context: Context) {
         val item = p.currentMediaItem
         val meta = item?.mediaMetadata
         val current = if (item == null) null else {
-            val duration = p.duration.takeIf { it > 0 } ?: meta?.durationMs ?: 0L
+            val duration = durationOf(p)
             NowPlaying(
                 mediaId = item.mediaId,
                 title = meta?.title?.toString().orEmpty(),
@@ -209,6 +218,7 @@ class PlayerController(context: Context) {
             )
         }
         _position.value = p.currentPosition.coerceAtLeast(0)
+        _buffered.value = p.bufferedPosition.coerceAtLeast(0)
         if (item != null && (p.currentMediaItemIndex != savedIndex || shuffleOn.value != savedShuffle)) {
             savedIndex = p.currentMediaItemIndex
             savedShuffle = shuffleOn.value
@@ -231,6 +241,24 @@ class PlayerController(context: Context) {
                 hasPrevious = p.hasPreviousMediaItem()
             )
         }
+    }
+
+    /** ¿La canción viene del servidor? (las del teléfono no tienen dirección http). */
+    private fun isRemote(item: MediaItem?): Boolean =
+        item?.mediaMetadata?.extras?.getString(EXTRA_URI)?.startsWith("http") == true
+
+    /**
+     * Duración de lo que suena. En la nube manda la que informa el servidor: el MP3 convertido al vuelo
+     * anuncia un tamaño algo mayor que el real y el reproductor calcularía unos segundos de más.
+     * En las "mejores partes" manda la del fragmento.
+     */
+    private fun durationOf(p: Player): Long {
+        val item = p.currentMediaItem
+        val meta = item?.mediaMetadata
+        val fromMeta = meta?.durationMs?.takeIf { it > 0 } ?: 0L
+        val clip = meta?.extras?.getBoolean(EXTRA_CLIP) == true
+        if (!clip && fromMeta > 0 && isRemote(item)) return fromMeta
+        return p.duration.takeIf { it > 0 } ?: fromMeta
     }
 
     private fun updateQueue(p: Player) {
@@ -291,18 +319,123 @@ class PlayerController(context: Context) {
         return AudioInfo(byExt.ifBlank { byMime }, kbps, rate)
     }
 
+    /** Si la app está a la vista. Sin nadie mirando, el avance se revisa 1 vez por segundo (no 4). */
+    @Volatile private var uiVisible = true
+
+    fun setUiVisible(visible: Boolean) {
+        uiVisible = visible
+        // Al volver, la barra salta enseguida a la posición real.
+        if (visible) controller?.let { c ->
+            _position.value = c.currentPosition.coerceAtLeast(0)
+            _buffered.value = c.bufferedPosition.coerceAtLeast(0)
+        }
+    }
+
     private fun startProgressLoop() {
         progressJob?.cancel()
         progressJob = scope.launch {
-            var ticks = 0
+            var lastSave = System.currentTimeMillis()
             while (isActive) {
                 controller?.let { c ->
                     val pos = c.currentPosition.coerceAtLeast(0)
                     _position.value = pos
-                    if (++ticks % 20 == 0) savePosition(pos) // cada ~5 s
+                    _buffered.value = c.bufferedPosition.coerceAtLeast(0)
+                    val now = System.currentTimeMillis()
+                    if (now - lastSave >= 5_000) { savePosition(pos); lastSave = now } // cada ~5 s
+                    countPlay(c, pos)
+                    trackLastFm(c, pos)
                 }
-                delay(250)
+                delay(if (uiVisible) 250 else 1_000)
             }
+        }
+    }
+
+    /** Última reproducción contada (por item de la cola): una canción cuenta una vez por vez que suena. */
+    private var countedUid: String? = null
+
+    /** Cuenta una escucha cuando la canción lleva 30 s (o la mitad, si es corta). */
+    private fun countPlay(c: MediaController, pos: Long) {
+        val item = c.currentMediaItem ?: return
+        val uid = item.mediaMetadata.extras?.getString(EXTRA_UID) ?: item.mediaId
+        if (uid == countedUid) return
+        val dur = durationOf(c).takeIf { it > 0 } ?: return
+        if (pos < minOf(30_000L, dur / 2)) return
+        countedUid = uid
+        item.mediaId.toLongOrNull()?.let { (appContext as MelodiaApp).stats.record(it) }
+    }
+
+    // --- Last.fm: "escuchando ahora" al empezar y scrobble a la mitad (o a los 4 min) ---
+    private var lfmUid: String? = null
+    private var lfmStart = 0L
+    private var lfmDone = false
+
+    private fun trackLastFm(c: MediaController, pos: Long) {
+        val item = c.currentMediaItem ?: return
+        val uid = item.mediaMetadata.extras?.getString(EXTRA_UID) ?: item.mediaId
+        val m = item.mediaMetadata
+        val artist = m.artist?.toString().orEmpty()
+        val title = m.title?.toString().orEmpty()
+        val album = m.albumTitle?.toString().orEmpty()
+        val dur = durationOf(c).takeIf { it > 0 } ?: 0L
+        val lfm = (appContext as MelodiaApp).lastfm
+        if (uid != lfmUid) {
+            if (!c.isPlaying) return
+            lfmUid = uid
+            lfmStart = System.currentTimeMillis() - pos
+            lfmDone = false
+            lfm.nowPlaying(artist, title, album, dur)
+            return
+        }
+        // Si se vuelve al principio (repetir), cuenta como otra escucha.
+        if (lfmDone && pos < 3_000 && c.isPlaying) {
+            lfmStart = System.currentTimeMillis() - pos
+            lfmDone = false
+            lfm.nowPlaying(artist, title, album, dur)
+        }
+        if (lfmDone || dur < 30_000) return
+        if (pos >= minOf(240_000L, dur / 2)) {
+            lfmDone = true
+            lfm.scrobble(artist, title, album, dur, lfmStart)
+        }
+    }
+
+    private var prefetchJob: Job? = null
+
+    /**
+     * Descarga por adelantado el comienzo de las siguientes canciones del servidor, pero solo cuando la
+     * que suena ya tiene su colchón: al empezar una canción, ella tiene toda la conexión para sí.
+     */
+    private fun prefetchUpcoming() {
+        val c = controller ?: return
+        val cur = c.currentMediaItemIndex
+        if (cur < 0) return
+        val next = (1..2).mapNotNull { k ->
+            val i = cur + k
+            if (i < c.mediaItemCount) c.getMediaItemAt(i).localConfiguration?.uri else null
+        }
+        prefetchJob?.cancel()
+        // Corta enseguida la precarga anterior (era para otra posición de la cola).
+        StreamCache.prefetch(appContext, emptyList())
+        if (next.isEmpty()) return
+        prefetchJob = scope.launch {
+            awaitHeadroom(15_000)
+            StreamCache.prefetch(appContext, next)
+        }
+    }
+
+    /**
+     * Espera (como mucho [maxWaitMs]) a que la canción de la nube que suena tenga ~15 s descargados
+     * por delante o esté completa. Con música del teléfono no espera.
+     */
+    suspend fun awaitHeadroom(maxWaitMs: Long) {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < maxWaitMs) {
+            val c = controller ?: return
+            if (!isRemote(c.currentMediaItem)) return
+            val buffered = c.bufferedPosition
+            val dur = durationOf(c)
+            if (buffered - c.currentPosition >= 15_000 || (dur > 0 && buffered >= dur - 1_000)) return
+            delay(500)
         }
     }
 
@@ -380,6 +513,35 @@ class PlayerController(context: Context) {
             .putLong(KEY_POSITION, startMs)
             .putBoolean(KEY_SHUFFLE, shuffle)
             .apply()
+    }
+
+    /**
+     * "Mejores partes": reproduce seguidas solo las mejores partes de [clips] (canción y
+     * milisegundo donde empieza su mejor parte), [lengthMs] de cada una.
+     */
+    fun playClips(clips: List<Pair<Song, Long>>, lengthMs: Long = 30_000L) {
+        if (clips.isEmpty()) return
+        val items = clips.take(MAX_QUEUE).map { (song, start) ->
+            val base = song.toMediaItem()
+            val extras = Bundle(base.mediaMetadata.extras ?: Bundle()).apply { putBoolean(EXTRA_CLIP, true) }
+            base.buildUpon()
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(start.coerceAtLeast(0))
+                        .setEndPositionMs(start.coerceAtLeast(0) + lengthMs)
+                        .build()
+                )
+                .setMediaMetadata(base.mediaMetadata.buildUpon().setExtras(extras).build())
+                .build()
+        }
+        shuffleOn.value = false
+        originalIds = null
+        withController { c ->
+            c.shuffleModeEnabled = false
+            c.setMediaItems(items, 0, 0L)
+            c.prepare()
+            c.play()
+        }
     }
 
     // ---- Cola: editar lo que sigue ------------------------------------------
@@ -471,8 +633,37 @@ class PlayerController(context: Context) {
         }
     }
 
+    /** Reanuda lo que había en la cola (o lo pausa si ya suena). */
+    fun resume() = withController { c -> if (c.mediaItemCount > 0) { c.prepare(); c.play() } }
+
+    /**
+     * Para el widget: pausa o sigue. Si la app estaba cerrada y la cola está vacía, la vuelve a
+     * cargar desde la última sesión ([load] da la biblioteca guardada) y empieza a sonar.
+     */
+    fun playPauseOrRestore(load: suspend () -> List<Song>) = withController { c ->
+        if (c.mediaItemCount > 0) {
+            if (c.playWhenReady) c.pause() else { c.prepare(); c.play() }
+        } else {
+            // Leer la biblioteca guardada toma un momento: se hace fuera del hilo principal.
+            scope.launch {
+                val library = kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { load() }.getOrDefault(emptyList()) }
+                restoreLastSession(library)
+                withController { if (it.mediaItemCount > 0) it.play() }
+            }
+        }
+    }
+
+    /**
+     * Mira la intención (playWhenReady), no si ya suena: mientras una canción de la nube carga, "isPlaying"
+     * es falso y antes el botón no hacía nada. Si el reproductor quedó detenido por un error, lo reanuda.
+     */
     fun togglePlayPause() = withController { c ->
-        if (c.isPlaying) c.pause() else c.play()
+        if (c.playWhenReady && c.playbackState != Player.STATE_IDLE && c.playbackState != Player.STATE_ENDED) c.pause()
+        else {
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition()
+            c.play()
+        }
     }
 
     fun next() = withController { it.seekToNext() }
@@ -489,9 +680,12 @@ class PlayerController(context: Context) {
     }
 
     fun seekTo(positionMs: Long) = withController { c ->
-        c.seekTo(positionMs)
-        _position.value = positionMs
-        savePosition(positionMs)
+        // En la nube no se salta más allá del final real (el servidor respondería con error).
+        val dur = durationOf(c)
+        val target = if (isRemote(c.currentMediaItem) && dur > 2_000) positionMs.coerceAtMost(dur - 1_000) else positionMs
+        c.seekTo(target)
+        _position.value = target
+        savePosition(target)
     }
 
     /**
@@ -560,6 +754,7 @@ class PlayerController(context: Context) {
         const val EXTRA_SIZE = "melodia.size"
         const val EXTRA_URI = "melodia.uri"
         const val EXTRA_UID = "melodia.uid"
+        const val EXTRA_CLIP = "melodia.clip"
         /** Máximo de canciones que se cargan en la cola a la vez. */
         const val MAX_QUEUE = 400
         const val KEY_QUEUE = "queue"

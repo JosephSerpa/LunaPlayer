@@ -17,6 +17,8 @@ const val EQ_MIN_DB = -20f
 const val EQ_MAX_DB = 20f
 const val PREAMP_MIN_DB = -20f
 const val PREAMP_MAX_DB = 20f
+/** Volumen extra manual (después de la ganancia general). Puede saturar: lo decide quien usa la app. */
+const val BOOST_MAX_DB = 20f
 const val Q_MIN = 0.3f
 const val Q_MAX = 8f
 const val GRAPH_MIN_HZ = 20.0
@@ -68,7 +70,11 @@ data class EqSettings(
     val enabled: Boolean = true,
     val preampDb: Float = 0f,
     val bands: List<EqBand> = defaultBands(),
-    val preset: String = "Plano"
+    val preset: String = "Plano",
+    /** Volumen extra en dB (0 a [BOOST_MAX_DB]). */
+    val boostDb: Float = 0f,
+    /** Limitador suave contra saturación; apagado, el audio se recorta en seco al pasar del máximo. */
+    val limiter: Boolean = true
 )
 
 fun defaultBands(gains: List<Float> = List(DEFAULT_FREQS.size) { 0f }): List<EqBand> =

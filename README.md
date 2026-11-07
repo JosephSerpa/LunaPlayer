@@ -99,7 +99,7 @@ Los textos viven en `values/strings.xml` (español) y `values-en/strings.xml` (i
 
 ## 📌 Estado
 
-Proyecto personal en desarrollo activo. Versión actual: **1.9.9** (paquete `com.lunaplayer.app`). Probado en un Samsung Galaxy S26 Ultra.
+Proyecto personal en desarrollo activo. Versión actual: **1.9.11** (paquete `com.lunaplayer.app`). Probado en un Samsung Galaxy S26 Ultra.
 
 ## 🔒 Privacidad y publicación
 
@@ -119,3 +119,7 @@ Si te gusta Luna player: https://ko-fi.com/raizzon
 ---
 
 <sub>Hecho con Kotlin y mucho cariño por la música. 🌙</sub>
+
+## 📜 Licencia
+
+El código se publica para que se pueda **leer**, pero **no se puede usar, copiar, compilar ni redistribuir** sin permiso. Consulta [LICENSE](LICENSE). Las bibliotecas y tipografías de terceros mantienen sus propias licencias (Apache 2.0 y SIL OFL): ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

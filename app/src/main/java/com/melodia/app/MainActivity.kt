@@ -36,6 +36,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -126,7 +131,27 @@ class MainActivity : ComponentActivity() {
         super.attachBaseContext(LocaleManager.wrap(newBase))
     }
 
+    override fun onStart() {
+        super.onStart()
+        (application as MelodiaApp).playerController.setUiVisible(true)
+    }
+
+    override fun onStop() {
+        (application as MelodiaApp).playerController.setUiVisible(false)
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Al volver a la app se traen los cambios hechos en otros dispositivos.
+        (application as MelodiaApp).sync.syncNow(minGapMs = 30_000)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Al girar, un fundido suave en lugar de la pantalla girando.
+        window.attributes = window.attributes.also {
+            it.rotationAnimation = android.view.WindowManager.LayoutParams.ROTATION_ANIMATION_CROSSFADE
+        }
         if (savedInstanceState == null) handleIntent(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
@@ -213,18 +238,92 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
     val equalizer = app.equalizer
     val eqSettings by equalizer.settings.collectAsStateWithLifecycle()
     val serverConfig by app.serverSettings.config.collectAsStateWithLifecycle()
+    // Con la biblioteca cargada, las listas, "me gusta" y estrellas del servidor se igualan con las de este dispositivo.
+    // (serverSyncing va en las claves: si la biblioteca no cambia al terminar de revisar el servidor, igual se sincroniza.)
+    androidx.compose.runtime.LaunchedEffect(library.songs, library.loaded, library.serverSyncing, serverConfig.isActive) {
+        if (library.loaded && !library.serverSyncing) app.sync.onLibrary(library.songs)
+        if (library.loaded) app.lastfm.setLibrary(library.songs)
+    }
     val marks by app.favorites.marks.collectAsStateWithLifecycle()
+    val albumMarks by app.favorites.albumMarks.collectAsStateWithLifecycle()
     val fx by app.effects.settings.collectAsStateWithLifecycle()
     val moonMode by app.favorites.moonMode.collectAsStateWithLifecycle()
     val nav = rememberNavController()
+    // Tipo de pantalla y pantalla dividida (horizontal): navegador a la izquierda, reproductor a la derecha.
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val deviceClass = com.melodia.app.ui.deviceClassOf(config)
+    val splitMode by app.ui.split.collectAsStateWithLifecycle()
+    // Por defecto: activado en tablets, desactivado en celulares y reproductores pequeños.
+    val landscapeEnabled = when (splitMode) {
+        1 -> true
+        2 -> false
+        else -> deviceClass == com.melodia.app.ui.DeviceClass.TABLET
+    }
+    // Sin la opción activa la app no gira a horizontal; con ella, sigue el giro del teléfono.
+    val hostActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    LaunchedEffect(landscapeEnabled) {
+        hostActivity?.requestedOrientation = if (landscapeEnabled)
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
     val coverOrigin = remember { CoverOrigin() }
     val playlists by app.playlists.playlists.collectAsStateWithLifecycle()
+    val homeTiles by app.home.tiles.collectAsStateWithLifecycle()
+    val playStats by app.stats.counts.collectAsStateWithLifecycle()
+    // Fijar / quitar de Inicio (desde el menú de una canción, álbum o artista).
+    val togglePin: (com.melodia.app.data.TileKind, String) -> Unit = { kind, ref ->
+        if (app.home.isPinned(kind, ref)) {
+            app.home.unpin(kind, ref)
+            android.widget.Toast.makeText(app, Str.get(R.string.home_unpinned), android.widget.Toast.LENGTH_SHORT).show()
+        } else if (app.home.pin(kind, ref)) {
+            android.widget.Toast.makeText(app, Str.get(R.string.home_pinned), android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            android.widget.Toast.makeText(app, Str.get(R.string.home_full), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Menú de canción (mantener presionada / botón del reproductor) y diálogos de listas.
     var menuSong by remember { mutableStateOf<Song?>(null) }
     var menuPlaylist by remember { mutableStateOf<Playlist?>(null) }
     var creatingPlaylist by remember { mutableStateOf(false) }
     val openSongMenu: (Song) -> Unit = { menuSong = it; menuPlaylist = null }
+
+    // --- Editar la información de una canción del teléfono ---
+    var editSong by remember { mutableStateOf<Song?>(null) }
+    var pendingEdit by remember { mutableStateOf<com.melodia.app.data.SongEdit?>(null) }
+    val editScope = rememberCoroutineScope()
+    var launchEditPermission: (android.content.IntentSender) -> Unit = {}
+    val applyEdit: (com.melodia.app.data.SongEdit) -> Unit = { e ->
+        editScope.launch {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.melodia.app.data.SongEditor.apply(context, e) }
+            }
+            val ex = r.exceptionOrNull()
+            if (ex == null) {
+                android.widget.Toast.makeText(context, Str.get(R.string.edit_saved), android.widget.Toast.LENGTH_SHORT).show()
+                vm.reload()
+            } else if (android.os.Build.VERSION.SDK_INT >= 29 && ex is android.app.RecoverableSecurityException) {
+                pendingEdit = e
+                launchEditPermission(ex.userAction.actionIntent.intentSender)
+            } else {
+                android.widget.Toast.makeText(context, Str.get(R.string.edit_failed), android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val editLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        val e = pendingEdit
+        pendingEdit = null
+        if (e != null && res.resultCode == android.app.Activity.RESULT_OK) applyEdit(e)
+    }
+    launchEditPermission = { sender -> editLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(sender).build()) }
+    val requestEdit: (com.melodia.app.data.SongEdit) -> Unit = { e ->
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            // Android pide permiso para modificar esta canción.
+            pendingEdit = e
+            val sender = android.provider.MediaStore.createWriteRequest(context.contentResolver, listOf(e.song.uri)).intentSender
+            launchEditPermission(sender)
+        } else applyEdit(e)
+    }
     var menuCollection by remember { mutableStateOf<CollectionTarget?>(null) }
     val queue by controller.queue.collectAsStateWithLifecycle()
     val toast: (Int) -> Unit = { res ->
@@ -235,6 +334,11 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
     var expanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.load() }
+    // Al volver a la app, se revisa si el servidor cambió.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        vm.onForeground()
+        onPauseOrDispose { }
+    }
 
     // Tocar la notificación: abre el reproductor (desde la barra inferior).
     val openRequests by openPlayerRequests.collectAsStateWithLifecycle()
@@ -298,6 +402,8 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
     val progressAnim = remember { Animatable(0f) }
     var dragging by remember { mutableStateOf(false) }
     val skipNextEffect = remember { booleanArrayOf(false) }
+    // Se está jalando la barra mini hacia arriba para abrir el reproductor.
+    var miniDragging by remember { mutableStateOf(false) }
     val uiScope = rememberCoroutineScope()
     // Resorte suave y sin rebote: la hoja se asienta en lugar de "saltar".
     val sheetSpring = spring<Float>(dampingRatio = 0.88f, stiffness = 240f)
@@ -315,6 +421,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
     // Cola de reproducción: 0 = oculta, 1 = abierta (el reproductor queda arriba en miniatura).
     val queueAnim = remember { Animatable(0f) }
     val queueSpring = spring<Float>(dampingRatio = 0.9f, stiffness = 260f)
+    val queueActive by remember { derivedStateOf { queueAnim.value > 0.001f } }
     val openQueue: () -> Unit = { uiScope.launch { queueAnim.animateTo(1f, queueSpring) } }
     val closeQueue: () -> Unit = { uiScope.launch { queueAnim.animateTo(0f, queueSpring) } }
     LaunchedEffect(expanded) { if (!expanded) queueAnim.snapTo(0f) }
@@ -329,7 +436,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
         uiScope.launch {
             if (g == 1) {
                 queueAnim.snapTo((queueAnim.value - dy / (screenH * 0.62f)).coerceIn(0f, 1f))
-            } else {
+            } else if (g == 2) {
                 dragging = true
                 progressAnim.snapTo((progressAnim.value - dy / (screenH * 0.9f)).coerceIn(0f, 1f))
             }
@@ -341,7 +448,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
         uiScope.launch {
             if (g == 1) {
                 val v = -vy / (screenH * 0.62f) // progreso por segundo (positivo = abriendo)
-                val open = v > 1.0f || (queueAnim.value > 0.4f && v > -1.0f)
+                val open = v > 0.8f || (queueAnim.value > 0.5f && v > -0.8f)
                 queueAnim.animateTo(if (open) 1f else 0f, queueSpring, initialVelocity = v)
             } else if (g == 2) {
                 if (vy > 1600f || progressAnim.value < 0.75f) {
@@ -366,24 +473,139 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
         LocalArt provides art,
         LocalShownArt provides shownArt,
         LocalMarks provides marks,
+        com.melodia.app.ui.home.LocalHomeActions provides remember(nav) {
+            com.melodia.app.ui.home.HomeActions(
+                onPlaylist = { nav.navigate("playlist/$it") },
+                onOpenLastFm = { nav.navigate("options/lastfm") { launchSingleTop = true } },
+                onOpenServer = { nav.navigate("options/server") { launchSingleTop = true } }
+            )
+        },
+        com.melodia.app.ui.components.LocalAlbumMarks provides albumMarks,
         LocalCoverOrigin provides coverOrigin,
+        com.melodia.app.ui.LocalDeviceClass provides deviceClass,
         LocalSongMenu provides openSongMenu,
         LocalCollectionMenu provides { target -> menuCollection = target }
     ) {
-        Box(Modifier.fillMaxSize().onSizeChanged { screenH = it.height.toFloat().coerceAtLeast(1f) }) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().onSizeChanged { screenH = it.height.toFloat().coerceAtLeast(1f) }) {
+            // Orientación según el tamaño real de la ventana en este mismo cuadro.
+            val wideLayout = landscapeEnabled && maxWidth > maxHeight
             // Fondo global: la carátula de la canción, muy difuminada.
             AmbientBackground(artUri = artUri, colors = art, isPlaying = player.isPlaying)
+            val paneMod = Modifier.fillMaxSize()
 
             // La biblioteca se desvanece mientras el reproductor se abre (se lee al dibujar, sin recomponer).
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - progressAnim.value }) {
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { alpha = 1f - progressAnim.value }
+            ) {
                 NavHost(
                     navController = nav,
-                    startDestination = "library",
+                    startDestination = "home",
                     enterTransition = { fadeIn(tween(300)) + slideInHorizontally(tween(350)) { it / 6 } },
                     exitTransition = { fadeOut(tween(200)) },
                     popEnterTransition = { fadeIn(tween(300)) },
                     popExitTransition = { fadeOut(tween(250)) + slideOutHorizontally(tween(350)) { it / 6 } }
                 ) {
+                    composable("home") {
+                        // Inicio y la biblioteca clásica: una sola pantalla que se desliza a los lados.
+                        val likedSongs = remember(library.songs, marks) {
+                            library.songs.filter { marks[it.id]?.liked == true }
+                                .sortedByDescending { marks[it.id]?.rating ?: 0 }
+                        }
+                        com.melodia.app.ui.home.MainPages(
+                            library = library,
+                            onPlayLikes = if (likedSongs.isEmpty()) null else ({ controller.play(likedSongs, 0, false) }),
+                            onOpenOptions = { nav.navigate("options") { launchSingleTop = true } },
+                            onPlaySong = playSong,
+                            home = { editing ->
+                        com.melodia.app.ui.home.HomeScreen(
+                            library = library,
+                            tiles = homeTiles,
+                            stats = playStats,
+                            hiddenBuiltIns = remember(homeTiles) { app.home.hiddenBuiltIns() },
+                            onMove = { key, col, row -> app.home.move(key, col, row) },
+                            onResize = { key, w, h -> if (!app.home.resize(key, w, h)) toast(R.string.home_full) },
+                            onOpenList = { nav.navigate("homelist/${it.name}") },
+                            onRemove = { app.home.remove(it) },
+                            onAddBuiltIn = { kind ->
+                                if (!app.home.addBuiltIn(kind)) toast(R.string.home_full)
+                            },
+                            onReset = { app.home.reset() },
+                            onOpenLibrary = { nav.navigate("library") { launchSingleTop = true } },
+                            onOpenOptions = { nav.navigate("options") { launchSingleTop = true } },
+                            onAlbum = { nav.navigate("album/$it") },
+                            onArtist = { nav.navigate("artist/${android.net.Uri.encode(it)}") },
+                            onGenre = { nav.navigate("genre/${android.net.Uri.encode(it)}") },
+                            onPlaySong = playSong,
+                            editingState = editing,
+                            embedded = true,
+                            onCols = { app.home.setCols(it) },
+                            onPinPlaylist = { togglePin(com.melodia.app.data.TileKind.PLAYLIST, it.toString()) }
+                        )
+                            },
+                            libraryPage = {
+                        LibraryScreen(
+                            state = library,
+                            query = query,
+                            onQueryChange = { query = it },
+                            current = player.current,
+                            isPlaying = player.isPlaying,
+                            onArtist = { nav.navigate("artist/${android.net.Uri.encode(it)}") },
+                            onAlbum = { nav.navigate("album/$it") },
+                            onFolder = { nav.navigate("folder/$it") },
+                            onOpenOptions = { nav.navigate("options") { launchSingleTop = true } },
+                            onPlay = { songs, index, shuffle -> controller.play(songs, index, shuffle) },
+                            onPlaySong = playSong,
+                            playlists = playlists,
+                            onPlaylist = { nav.navigate("playlist/$it") },
+                            onCreatePlaylist = { creatingPlaylist = true },
+                            showHeader = false
+                        )
+                            }
+                        )
+                    }
+                    composable(
+                        "homelist/{kind}",
+                        arguments = listOf(navArgument("kind") { type = NavType.StringType })
+                    ) { entry ->
+                        val kind = runCatching {
+                            com.melodia.app.data.TileKind.valueOf(entry.arguments?.getString("kind").orEmpty())
+                        }.getOrDefault(com.melodia.app.data.TileKind.QUICK)
+                        com.melodia.app.ui.home.HomeListScreen(
+                            kind = kind,
+                            library = library,
+                            stats = playStats,
+                            onBack = { nav.popBackStack() },
+                            onAlbum = { nav.navigate("album/$it") },
+                            onArtist = { nav.navigate("artist/${android.net.Uri.encode(it)}") },
+                            onGenre = { nav.navigate("genre/${android.net.Uri.encode(it)}") },
+                            onPlaySong = playSong
+                        )
+                    }
+                    composable(
+                        "genre/{name}",
+                        arguments = listOf(navArgument("name") { type = NavType.StringType })
+                    ) { entry ->
+                        val name = entry.arguments?.getString("name").orEmpty()
+                        val songs = remember(library.songs, name, playStats) {
+                            library.songs.filter { it.genre == name }
+                                .sortedByDescending { playStats[it.id]?.count ?: 0 }
+                        }
+                        DetailScreen(
+                            title = name,
+                            subtitle = Str.plural(R.plurals.songs_count, songs.size),
+                            artUri = songs.firstOrNull()?.artUri,
+                            circleArt = false,
+                            songs = songs,
+                            albums = emptyList(),
+                            current = player.current,
+                            isPlaying = player.isPlaying,
+                            onBack = { nav.popBackStack() },
+                            onAlbum = {},
+                            onPlay = { list, index, shuffle -> controller.play(list, index, shuffle) },
+                            onPlaySong = playSong
+                        )
+                    }
                     composable("library") {
                         LibraryScreen(
                             state = library,
@@ -468,6 +690,9 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                             library = library,
                             onOpenEqualizer = { nav.navigate("options/eq") { launchSingleTop = true } },
                             onOpenServer = { nav.navigate("options/server") { launchSingleTop = true } },
+                            onOpenLastFm = { nav.navigate("options/lastfm") { launchSingleTop = true } },
+                            onOpenLicenses = { nav.navigate("options/licenses") { launchSingleTop = true } },
+                            onOpenChangelog = { nav.navigate("options/changelog") { launchSingleTop = true } },
                             onBack = { nav.popBackStack() }
                         )
                     }
@@ -478,12 +703,27 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                             onBack = { nav.popBackStack() }
                         )
                     }
+                    composable("options/lastfm") {
+                        com.melodia.app.ui.options.LastFmScreen(
+                            lastfm = app.lastfm,
+                            library = library,
+                            onPlaySong = playSong,
+                            onBack = { nav.popBackStack() }
+                        )
+                    }
+                    composable("options/changelog") {
+                        com.melodia.app.ui.options.ChangelogScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("options/licenses") {
+                        com.melodia.app.ui.options.LicensesScreen(onBack = { nav.popBackStack() })
+                    }
                     composable("options/server") {
                         ServerScreen(
                             config = serverConfig,
                             library = library,
                             settings = app.serverSettings,
-                            onSync = vm::syncServer,
+                            sync = app.sync,
+                            onSync = { vm.syncServer(); app.sync.syncNow(full = true) },
                             onBack = { nav.popBackStack() }
                         )
                     }
@@ -553,7 +793,16 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                                 onBack = { nav.popBackStack() },
                                 onAlbum = {},
                                 onPlay = { songs, index, shuffle -> controller.play(songs, index, shuffle) },
-                                onPlaySong = playSong
+                                onPlaySong = playSong,
+                                actions = {
+                                    com.melodia.app.ui.library.AlbumActions(
+                                        mark = albumMarks[album.id],
+                                        onLike = { app.favorites.toggleAlbumLike(album.id) },
+                                        onRate = { n -> app.favorites.setAlbumRating(album.id, n) },
+                                        onPlayNext = { controller.playNext(album.songs); toast(R.string.toast_next) },
+                                        onAddToQueue = { controller.addToQueue(album.songs); toast(R.string.toast_queued) }
+                                    )
+                                }
                             )
                         }
                     }
@@ -563,33 +812,55 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
             // Mini-reproductor flotante: aparece cuando la carátula ya volvió a su sitio.
             AnimatedVisibility(
                 // Sin animación propia: la hoja del reproductor ya llegó exactamente a su sitio.
-                visible = player.current != null && !expanded && miniVisible,
+                visible = player.current != null && !expanded && (miniVisible || miniDragging),
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
                 enter = EnterTransition.None,
                 exit = ExitTransition.None
             ) {
                 MiniPlayer(
+                    modifier = Modifier.graphicsLayer { alpha = if (progressAnim.value >= 0.02f) 0f else 1f },
                     state = player,
                     position = controller.position,
+                    onDragStart = { miniDragging = true; dragging = true },
+                    onDrag = { dy ->
+                        uiScope.launch {
+                            progressAnim.snapTo((progressAnim.value - dy / (screenH * 0.6f)).coerceIn(0f, 1f))
+                        }
+                    },
+                    onDragEnd = { vy ->
+                        uiScope.launch {
+                            val open = vy < -900f || (progressAnim.value > 0.3f && vy < 900f)
+                            if (open) {
+                                // El efecto de `expanded` termina de abrir el reproductor desde donde quedó.
+                                dragging = false
+                                miniDragging = false
+                                expanded = true
+                            } else {
+                                progressAnim.animateTo(0f, sheetSpring)
+                                dragging = false
+                                miniDragging = false
+                            }
+                        }
+                    },
                     onExpand = { expanded = true },
                     onPlayPause = controller::togglePlayPause,
-                    onNext = controller::next
+                    onNext = controller::next,
+                    onPrevious = controller::previousTrack
                 )
             }
 
-            // Reproductor a pantalla completa.
+            // Reproductor a pantalla completa (o su mitad, en pantalla dividida).
+            Box(paneMod) {
             if (playerVisible) {
                 val songId = player.current?.mediaId?.toLongOrNull()
                 // Solo este bloque se redibuja con cada cuadro de la animación del reproductor.
                 Box(
                     Modifier.fillMaxSize().graphicsLayer {
-                        // Al abrir la cola, el reproductor se encoge hacia arriba y se funde en el mini reproductor.
+                        // Al abrir la cola, el resto del reproductor sube y se funde; la carátula sigue
+                        // hasta la barra de arriba (la dibuja la cola).
                         val q = queueAnim.value
-                        alpha = (1f - q * 1.7f).coerceIn(0f, 1f)
-                        val sc = 1f - 0.45f * q
-                        scaleX = sc; scaleY = sc
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.08f)
-                        translationY = -q * size.height * 0.05f
+                        alpha = (1f - q * 1.5f).coerceIn(0f, 1f)
+                        translationY = -q * 56.dp.toPx()
                     }
                 ) {
                 ProgressHost(progressAnim.asState()) { playerProgress ->
@@ -618,6 +889,13 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onNext = controller::next,
                     onPrevious = controller::previous,
                     onPreviousTrack = controller::previousTrack,
+                    hideCover = queueActive,
+                    wide = wideLayout,
+                    onEdit = {
+                        val s = library.songs.firstOrNull { it.id == songId }
+                        if (s != null && !s.isRemote) editSong = s
+                        else android.widget.Toast.makeText(context, Str.get(R.string.edit_remote), android.widget.Toast.LENGTH_LONG).show()
+                    },
                     onSetBest = { pos -> songId?.let { app.favorites.setBest(it, pos) } },
                     onClearBest = { songId?.let(app.favorites::clearBest) },
                     onSeek = controller::seekTo,
@@ -647,6 +925,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                 }
             }
 
+            }
             // --- Menú de canción y nueva lista ---
             menuSong?.let { song ->
                 SongMenuDialog(
@@ -661,7 +940,10 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onAddTo = { pid -> app.playlists.add(pid, listOf(song.id)) },
                     onCreateWith = { name -> app.playlists.create(name, listOf(song.id)) },
                     onRemoveFromPlaylist = { menuPlaylist?.let { app.playlists.remove(it.id, song.id) } },
-                    onDismiss = { menuSong = null; menuPlaylist = null }
+                    onDismiss = { menuSong = null; menuPlaylist = null },
+                    pinned = homeTiles.any { it.kind == com.melodia.app.data.TileKind.SONG && it.ref == song.id.toString() },
+                    onTogglePin = { togglePin(com.melodia.app.data.TileKind.SONG, song.id.toString()) },
+                    onEdit = if (!song.isRemote) ({ editSong = song }) else null
                 )
             }
             menuCollection?.let { target ->
@@ -675,10 +957,16 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onAddToQueue = { controller.addToQueue(target.songs); toast(R.string.toast_queued) },
                     onAddTo = { pid -> app.playlists.add(pid, target.songs.map { it.id }) },
                     onCreateWith = { name -> app.playlists.create(name, target.songs.map { it.id }) },
-                    onDismiss = { menuCollection = null }
+                    onDismiss = { menuCollection = null },
+                    pinned = target.pin?.let { p -> homeTiles.any { it.kind == p.kind && it.ref == p.ref } } ?: false,
+                    onTogglePin = target.pin?.let { p -> { togglePin(p.kind, p.ref) } },
+                    albumMark = target.albumId?.let { albumMarks[it] },
+                    onAlbumLike = target.albumId?.let { id -> { app.favorites.toggleAlbumLike(id) } },
+                    onAlbumRate = target.albumId?.let { id -> { n: Int -> app.favorites.setAlbumRating(id, n) } }
                 )
             }
-            if (queueAnim.value > 0.001f) {
+            if (queueActive) {
+                Box(paneMod) {
                 QueueOverlay(
                     progress = queueAnim.asState(),
                     queue = queue,
@@ -688,9 +976,21 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onRemove = controller::removeQueueItem,
                     onPlayPause = controller::togglePlayPause,
                     onNext = controller::next,
+                    onPrevious = controller::previousTrack,
                     onClose = closeQueue,
                     onProgressDelta = onQueueDelta,
                     onRelease = onQueueRelease
+                )
+                }
+            }
+            editSong?.let { s ->
+                com.melodia.app.ui.player.EditSongDialog(
+                    song = s,
+                    onSave = { t, a, al, g ->
+                        editSong = null
+                        requestEdit(com.melodia.app.data.SongEdit(s, t, a, al, g))
+                    },
+                    onDismiss = { editSong = null }
                 )
             }
             if (creatingPlaylist) {

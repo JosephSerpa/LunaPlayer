@@ -28,6 +28,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
@@ -207,7 +209,7 @@ fun DetailScreen(
                         Column(
                             Modifier.width(140.dp).pressableWithLongClick(
                                 collectionMenu?.let { m ->
-                                    { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs)) }
+                                    { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ALBUM, album.id.toString()), album.id)) }
                                 }
                             ) { onAlbum(album.id) }
                         ) {
@@ -243,5 +245,39 @@ fun DetailScreen(
                 )
             }
         }
+    }
+}
+
+/** Bajo el título de un álbum: me gusta, estrellas y "a continuación" / "a la cola". */
+@Composable
+fun AlbumActions(
+    mark: com.melodia.app.data.SongMark?,
+    onLike: () -> Unit,
+    onRate: (Int) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        com.melodia.app.ui.components.AlbumMarkBar(mark, onLike, onRate)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            QueueButton(Icons.AutoMirrored.Rounded.PlaylistPlay, Str.get(R.string.play_next_short), onPlayNext)
+            QueueButton(Icons.AutoMirrored.Rounded.QueueMusic, Str.get(R.string.add_to_queue_short), onAddToQueue)
+        }
+    }
+}
+
+@Composable
+private fun QueueButton(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .pressable(onClick)
+            .glass(RoundedCornerShape(50), fill = 0.10f, border = 0.18f)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = accentColor, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.labelLarge, color = ink, maxLines = 1)
     }
 }

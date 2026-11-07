@@ -1,5 +1,7 @@
 package com.melodia.app.ui.library
 
+import com.melodia.app.ui.components.burst
+import kotlinx.coroutines.launch
 import com.melodia.app.Str
 import com.melodia.app.R
 
@@ -35,6 +37,8 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -112,7 +116,7 @@ fun PlaylistList(
                         .fillMaxWidth()
                         .pressableWithLongClick(
                             collectionMenu?.let { m ->
-                                { m(CollectionTarget(p.name, Str.plural(R.plurals.songs_count, songs.size), songs.firstOrNull()?.artUri, songs)) }
+                                { m(CollectionTarget(p.name, Str.plural(R.plurals.songs_count, songs.size), songs.firstOrNull()?.artUri, songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.PLAYLIST, p.id.toString()))) }
                             }
                         ) { onOpen(p.id) }
                         .glass(RoundedCornerShape(22.dp), fill = 0.07f, border = 0.08f)
@@ -182,7 +186,12 @@ fun SongMenuDialog(
     onAddTo: (Long) -> Unit,
     onCreateWith: (String) -> Unit,
     onRemoveFromPlaylist: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Fijada en la pantalla de inicio. */
+    pinned: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
+    /** Editar título, artista, álbum y género (solo canciones del teléfono). */
+    onEdit: (() -> Unit)? = null
 ) {
     var creating by remember { mutableStateOf(false) }
     if (creating) {
@@ -215,6 +224,14 @@ fun SongMenuDialog(
             if (mark.liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             Str.get(if (mark.liked) R.string.menu_unlike else R.string.menu_like)
         ) { onToggleLike(); onDismiss() }
+        if (onTogglePin != null) {
+            MenuRow(Icons.Rounded.PushPin, Str.get(if (pinned) R.string.unpin_home else R.string.pin_home)) {
+                onTogglePin(); onDismiss()
+            }
+        }
+        if (onEdit != null) {
+            MenuRow(Icons.Rounded.Edit, Str.get(R.string.edit_song)) { onEdit(); onDismiss() }
+        }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -224,13 +241,23 @@ fun SongMenuDialog(
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.weight(1f)
             )
+            val starScope = androidx.compose.runtime.rememberCoroutineScope()
+            val starBursts = List(5) { com.melodia.app.ui.components.rememberBurst() }
+            val starAccent = accentColor
             for (i in 1..5) {
                 val on = i <= mark.rating
                 Icon(
                     if (on) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                     Str.plural(R.plurals.stars_count, i),
                     tint = if (on) accentColor else ink.copy(alpha = 0.5f),
-                    modifier = Modifier.size(36.dp).pressable { onRate(i) }.padding(5.dp)
+                    modifier = Modifier.size(36.dp)
+                        .burst(starBursts[i - 1], starAccent)
+                        .pressable {
+                            val clearing = mark.rating == i
+                            onRate(i)
+                            if (!clearing) starScope.launch { starBursts[i - 1].play(com.melodia.app.ui.components.BurstKind.STAR) }
+                        }
+                        .padding(5.dp)
                 )
             }
         }
@@ -273,7 +300,12 @@ fun CollectionMenuDialog(
     onAddToQueue: () -> Unit,
     onAddTo: (Long) -> Unit,
     onCreateWith: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    pinned: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
+    albumMark: com.melodia.app.data.SongMark? = null,
+    onAlbumLike: (() -> Unit)? = null,
+    onAlbumRate: ((Int) -> Unit)? = null
 ) {
     var creating by remember { mutableStateOf(false) }
     if (creating) {
@@ -298,11 +330,20 @@ fun CollectionMenuDialog(
                 )
             }
         }
+        if (target.albumId != null && onAlbumLike != null && onAlbumRate != null) {
+            Spacer(Modifier.padding(top = 8.dp))
+            com.melodia.app.ui.components.AlbumMarkBar(albumMark, onAlbumLike, onAlbumRate)
+        }
         Spacer(Modifier.padding(top = 10.dp))
         MenuRow(Icons.Rounded.PlayArrow, Str.get(R.string.menu_play)) { onPlay(false); onDismiss() }
         MenuRow(Icons.Rounded.Shuffle, Str.get(R.string.menu_shuffle)) { onPlay(true); onDismiss() }
         MenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, Str.get(R.string.play_next)) { onPlayNext(); onDismiss() }
         MenuRow(Icons.AutoMirrored.Rounded.QueueMusic, Str.get(R.string.add_to_queue)) { onAddToQueue(); onDismiss() }
+        if (onTogglePin != null) {
+            MenuRow(Icons.Rounded.PushPin, Str.get(if (pinned) R.string.unpin_home else R.string.pin_home)) {
+                onTogglePin(); onDismiss()
+            }
+        }
         MenuRow(Icons.Rounded.Add, Str.get(R.string.new_playlist)) { creating = true }
         if (playlists.isNotEmpty()) {
             Text(

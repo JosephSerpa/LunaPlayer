@@ -13,7 +13,7 @@ import kotlin.math.roundToInt
  * Guarda los ajustes del ecualizador, los envía al procesador de audio y
  * los recuerda entre sesiones.
  */
-class EqualizerEngine(context: Context) {
+class EqualizerEngine(private val context: Context) {
 
     val processor = EqualizerAudioProcessor()
 
@@ -23,24 +23,73 @@ class EqualizerEngine(context: Context) {
     private val _settings = MutableStateFlow(decode(prefs.getString(KEY, null)))
     val settings: StateFlow<EqSettings> = _settings.asStateFlow()
 
+    private val _autoSave = MutableStateFlow(prefs.getBoolean(KEY_AUTOSAVE, true))
+    /** Si está activo, los cambios se guardan solos en el perfil propio que esté en uso. */
+    val autoSave: StateFlow<Boolean> = _autoSave.asStateFlow()
+
+    fun setAutoSave(on: Boolean) {
+        _autoSave.value = on
+        prefs.edit().putBoolean(KEY_AUTOSAVE, on).apply()
+        if (on) scheduleSave()
+    }
+
+    /** Con autoguardado y un perfil propio en uso, el nombre se mantiene; si no, pasa a "Personalizado". */
+    private fun nameAfterEdit(s: EqSettings): String =
+        if (_autoSave.value && _profiles.value.any { it.preset == s.preset }) s.preset else CUSTOM
+
+    // --- Ecualizador global (todo el dispositivo) ---------------------------
+
+    private val globalEq = GlobalEq()
+    private val _global = MutableStateFlow(false)
+    /** Verdadero si el ecualizador está actuando sobre todo el dispositivo. */
+    val global: StateFlow<Boolean> = _global.asStateFlow()
+
+    /** Activa o desactiva el modo global. Devuelve falso si este dispositivo no lo permite. */
+    fun setGlobal(on: Boolean): Boolean {
+        if (on) {
+            if (!globalEq.start(_settings.value)) return false
+            runCatching {
+                context.startForegroundService(android.content.Intent(context, GlobalEqService::class.java))
+            }
+        } else {
+            globalEq.stop()
+            runCatching { context.stopService(android.content.Intent(context, GlobalEqService::class.java)) }
+        }
+        _global.value = on
+        prefs.edit().putBoolean(KEY_GLOBAL, on).apply()
+        processor.setSettings(forProcessor(_settings.value))
+        return true
+    }
+
+    // El procesador propio se aparta si el global ya ecualiza todo (si no, la app sonaría ecualizada dos veces).
+    private fun forProcessor(s: EqSettings) = if (_global.value) s.copy(enabled = false) else s
+
     init {
         processor.setSettings(_settings.value)
+        // Si estaba activado la última vez, se vuelve a enganchar al arrancar.
+        if (prefs.getBoolean(KEY_GLOBAL, false)) setGlobal(true)
     }
 
     private fun update(transform: (EqSettings) -> EqSettings) {
         val next = transform(_settings.value)
         _settings.value = next
-        processor.setSettings(next)
+        processor.setSettings(forProcessor(next))
+        if (_global.value) globalEq.apply(next)
         scheduleSave()
     }
 
     private fun EqSettings.withBand(index: Int, change: (EqBand) -> EqBand): EqSettings =
         copy(
             bands = bands.mapIndexed { i, b -> if (i == index) change(b) else b },
-            preset = CUSTOM
+            preset = nameAfterEdit(this)
         )
 
     fun setEnabled(enabled: Boolean) = update { it.copy(enabled = enabled) }
+
+    fun setBoost(db: Float) =
+        update { it.copy(boostDb = db.coerceIn(0f, BOOST_MAX_DB)) }
+
+    fun setLimiter(on: Boolean) = update { it.copy(limiter = on) }
 
     fun setPreamp(db: Float) =
         update { it.copy(preampDb = db.coerceIn(PREAMP_MIN_DB, PREAMP_MAX_DB)) }
@@ -86,7 +135,7 @@ class EqualizerEngine(context: Context) {
             }
         }
         val hz = bestMid.coerceIn(FREQ_MIN, FREQ_MAX).let { if (it < 1000f) it.roundToInt().toFloat() else (it / 10f).roundToInt() * 10f }
-        update { it.copy(bands = it.bands + EqBand(hz, 0f, 1.0f), preset = CUSTOM) }
+        update { it.copy(bands = it.bands + EqBand(hz, 0f, 1.0f), preset = nameAfterEdit(it)) }
         return _settings.value.bands.size - 1
     }
 
@@ -94,7 +143,7 @@ class EqualizerEngine(context: Context) {
     fun removeBand(index: Int) {
         if (_settings.value.bands.size <= EQ_MIN_BANDS) return
         update { s ->
-            s.copy(bands = s.bands.filterIndexed { i, _ -> i != index }, preset = CUSTOM)
+            s.copy(bands = s.bands.filterIndexed { i, _ -> i != index }, preset = nameAfterEdit(s))
         }
     }
 
@@ -107,12 +156,16 @@ class EqualizerEngine(context: Context) {
     /** Perfiles guardados por el usuario (bandas, frecuencias, Q y ganancia previa). */
     val profiles: StateFlow<List<EqSettings>> = _profiles.asStateFlow()
 
-    /** Guarda el ajuste actual como un perfil con nombre (reemplaza si ya existe). */
-    fun saveProfile(name: String) {
-        val clean = name.trim().replace(";", "").replace("|", "").ifBlank { return }
+    /**
+     * Guarda el ajuste actual como un perfil con nombre (reemplaza si ya existe).
+     * Si se indica un [device], el perfil se pondrá solo cada vez que ese dispositivo se conecte.
+     */
+    fun saveProfile(name: String, device: OutputDevice? = null) {
+        val clean = name.trim().replace(";", "").replace("|", "").replace("=", "").ifBlank { return }
         val profile = _settings.value.copy(enabled = true, preset = clean)
         _profiles.value = _profiles.value.filterNot { it.preset == clean } + profile
         storeProfiles()
+        if (device != null) assign(device, clean)
         update { it.copy(preset = clean) }
     }
 
@@ -123,6 +176,81 @@ class EqualizerEngine(context: Context) {
     fun deleteProfile(name: String) {
         _profiles.value = _profiles.value.filterNot { it.preset == name }
         storeProfiles()
+        _assignments.value = _assignments.value.filterValues { it.profile != name }
+        storeAssignments()
+    }
+
+    // --- Perfiles por dispositivo ---------------------------------------------
+
+    private val audioManager = context.getSystemService(android.media.AudioManager::class.java)
+
+    private val _devices = MutableStateFlow(currentDevices())
+    /** Dispositivos de salida conectados ahora (altavoz, auriculares, Bluetooth, USB…). */
+    val devices: StateFlow<List<OutputDevice>> = _devices.asStateFlow()
+
+    private val _assignments = MutableStateFlow(loadAssignments())
+    /** Qué perfil se pone al conectar cada dispositivo (clave del dispositivo → asignación). */
+    val assignments: StateFlow<Map<String, Assignment>> = _assignments.asStateFlow()
+
+    data class Assignment(val profile: String, val deviceName: String)
+
+    private fun assign(device: OutputDevice, profile: String) {
+        // Un dispositivo solo tiene un perfil: el nuevo reemplaza al anterior.
+        _assignments.value = _assignments.value + (device.key to Assignment(profile, device.name))
+        storeAssignments()
+    }
+
+    fun unassign(profile: String) {
+        _assignments.value = _assignments.value.filterValues { it.profile != profile }
+        storeAssignments()
+    }
+
+    /** Dispositivo asignado a un perfil, si lo hay. */
+    fun deviceOf(profile: String): String? =
+        _assignments.value.values.firstOrNull { it.profile == profile }?.deviceName
+
+    private fun currentDevices(): List<OutputDevice> =
+        audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+            .mapNotNull { OutputDevice.from(it) }
+            .distinctBy { it.key }
+
+    private fun registerDeviceWatcher() {
+        audioManager.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) {
+                val before = _devices.value.map { it.key }.toSet()
+                _devices.value = currentDevices()
+                for (d in added) {
+                    val dev = OutputDevice.from(d) ?: continue
+                    if (dev.key in before) continue
+                    val a = _assignments.value[dev.key] ?: continue
+                    _profiles.value.firstOrNull { it.preset == a.profile }?.let { applyProfile(it) }
+                    break
+                }
+            }
+
+            override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) {
+                _devices.value = currentDevices()
+            }
+        }, handler)
+    }
+
+    private fun storeAssignments() {
+        prefs.edit().putString(
+            KEY_ASSIGN,
+            _assignments.value.entries.joinToString("\n") { (k, v) ->
+                listOf(k, v.profile, v.deviceName).joinToString("=")
+            }
+        ).apply()
+    }
+
+    private fun loadAssignments(): Map<String, Assignment> =
+        prefs.getString(KEY_ASSIGN, null).orEmpty().split('\n').mapNotNull { line ->
+            val p = line.split('=')
+            if (p.size == 3) p[0] to Assignment(p[1], p[2]) else null
+        }.toMap()
+
+    init {
+        registerDeviceWatcher()
     }
 
     private fun storeProfiles() {
@@ -139,7 +267,7 @@ class EqualizerEngine(context: Context) {
     }
 
     fun resetAll() = update {
-        EqSettings(enabled = it.enabled, preampDb = 0f, bands = defaultBands(), preset = "Plano")
+        EqSettings(enabled = it.enabled, preampDb = 0f, bands = defaultBands(), preset = "Plano", boostDb = 0f, limiter = it.limiter)
     }
 
     // --- Persistencia -------------------------------------------------------
@@ -150,14 +278,23 @@ class EqualizerEngine(context: Context) {
     }
 
     private val saveRunnable = Runnable {
-        prefs.edit().putString(KEY, encode(_settings.value)).apply()
+        val s = _settings.value
+        prefs.edit().putString(KEY, encode(s)).apply()
+        // Autoguardado: si hay un perfil propio en uso, se actualiza con lo que se ve ahora.
+        if (_autoSave.value && _profiles.value.any { it.preset == s.preset }) {
+            val updated = s.copy(enabled = true)
+            _profiles.value = _profiles.value.map { if (it.preset == s.preset) updated else it }
+            storeProfiles()
+        }
     }
 
     private fun encode(s: EqSettings): String = buildString {
         append(if (s.enabled) "1" else "0").append(';')
         append(s.preampDb).append(';')
         append(s.preset.replace(";", "").replace("|", "")).append(';')
-        append(s.bands.joinToString("|") { "${it.freqHz},${it.gainDb},${it.q},${it.type.name}" })
+        append(s.bands.joinToString("|") { "${it.freqHz},${it.gainDb},${it.q},${it.type.name}" }).append(';')
+        append(s.boostDb).append(';')
+        append(if (s.limiter) "1" else "0")
     }
 
     private fun decode(raw: String?): EqSettings {
@@ -180,7 +317,9 @@ class EqualizerEngine(context: Context) {
                 enabled = parts[0] == "1",
                 preampDb = parts[1].toFloat().coerceIn(PREAMP_MIN_DB, PREAMP_MAX_DB),
                 bands = bands,
-                preset = parts[2].ifBlank { CUSTOM }
+                preset = parts[2].ifBlank { CUSTOM },
+                boostDb = parts.getOrNull(4)?.toFloatOrNull()?.coerceIn(0f, BOOST_MAX_DB) ?: 0f,
+                limiter = parts.getOrNull(5) != "0"
             )
         }.getOrElse { EqSettings() }
     }
@@ -190,6 +329,41 @@ class EqualizerEngine(context: Context) {
         const val FREQ_MAX = 20000f
         const val KEY = "settings_v1"
         const val KEY_PROFILES = "profiles_v1"
+        const val KEY_GLOBAL = "global_v1"
+        const val KEY_ASSIGN = "assign_v1"
+        const val KEY_AUTOSAVE = "autosave_v1"
         const val CUSTOM = "Personalizado"
+    }
+}
+
+/** Un dispositivo de salida de audio. [key] lo identifica entre conexiones (tipo + dirección o nombre). */
+data class OutputDevice(val key: String, val name: String, val type: Int) {
+    companion object {
+        fun from(d: android.media.AudioDeviceInfo): OutputDevice? {
+            val t = d.type
+            val ok = t in setOf(
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                android.media.AudioDeviceInfo.TYPE_USB_DEVICE,
+                android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY,
+                android.media.AudioDeviceInfo.TYPE_HDMI,
+                android.media.AudioDeviceInfo.TYPE_LINE_ANALOG,
+                android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER,
+                android.media.AudioDeviceInfo.TYPE_HEARING_AID
+            )
+            if (!ok) return null
+            val label = d.productName?.toString()?.trim().orEmpty()
+            val id = d.address.ifBlank { label }
+            val name = when {
+                t == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> com.melodia.app.Str.get(com.melodia.app.R.string.eq_dev_speaker)
+                label.isNotBlank() -> label
+                else -> com.melodia.app.Str.get(com.melodia.app.R.string.eq_dev_wired)
+            }
+            return OutputDevice("$t|$id".replace("=", "").replace("\n", ""), name.replace("=", "").replace("\n", ""), t)
+        }
     }
 }
