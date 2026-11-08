@@ -416,4 +416,6 @@
     <string name="search_sort_stars">Estrellas</string>
     <string name="search_sort_likes">Me gusta</string>
     <string name="search_filters_help">Elige dónde buscar lo que escribes: en todo, solo en el nombre de la canción, el artista, el álbum, el género o la carpeta. Luego ordena los resultados por relevancia, por estrellas (de más a menos) o con tus me gusta primero.</string>
+    <string name="eq_state_on">Activado</string>
+    <string name="eq_state_off">Desactivado</string>
 </resources>

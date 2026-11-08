@@ -159,7 +159,7 @@ fun SettingsScreen(
         // --- Acerca de ---
         SettingsSectionLabel(Str.get(R.string.about))
         SettingsCard {
-            Text("Luna player 2.6.8", style = MaterialTheme.typography.titleMedium)
+            Text("Luna player 2.6.9", style = MaterialTheme.typography.titleMedium)
             Text(
                 Str.plural(R.plurals.about_phone_songs, library.songs.size - library.serverSongs) +
                         if (library.serverSongs > 0) Str.get(R.string.about_server_part, library.serverSongs) else "",

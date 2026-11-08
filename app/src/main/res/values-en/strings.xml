@@ -416,4 +416,6 @@
     <string name="search_sort_stars">Stars</string>
     <string name="search_sort_likes">Likes</string>
     <string name="search_filters_help">Choose where to look for what you type: everything, or only the song name, artist, album, genre or folder. Then sort the results by relevance, by stars (highest first) or with your likes first.</string>
+    <string name="eq_state_on">On</string>
+    <string name="eq_state_off">Off</string>
 </resources>

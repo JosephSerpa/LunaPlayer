@@ -143,51 +143,7 @@ fun EqualizerScreen(
                 .glass(RoundedCornerShape(32.dp), fill = 0.07f)
                 .padding(18.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Agregar / quitar curvas: solo iconos (de 0 a 7).
-                val canAdd = settings.bands.size < EQ_BANDS
-                val canRemove = settings.bands.size > EQ_MIN_BANDS
-                PointButton(
-                    icon = Icons.Rounded.Remove, description = Str.get(R.string.eq_remove_curve),
-                    enabled = canRemove, filled = false,
-                    onClick = { if (selected >= 0) eq.removeBand(selected) }
-                )
-                Spacer(Modifier.width(8.dp))
-                PointButton(
-                    icon = Icons.Rounded.Add, description = Str.get(R.string.eq_add_curve),
-                    enabled = canAdd, filled = true,
-                    onClick = { val i = eq.addBand(); if (i >= 0) selectedRaw = i }
-                )
-                HelpBadge(
-                    Str.get(R.string.eq_help),
-                    Modifier.padding(start = 6.dp)
-                )
-                Spacer(Modifier.weight(1f))
-                // Ganancia general en número (se pone roja si puede saturar).
-                Text(
-                    fmtDb(settings.preampDb) + " dB",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = overloadTint(accent, peakDb),
-                    modifier = Modifier.padding(end = 12.dp)
-                )
-                Switch(
-                    checked = settings.enabled,
-                    onCheckedChange = { eq.setEnabled(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = accent,
-                        checkedBorderColor = Color.Transparent,
-                        uncheckedThumbColor = ink.copy(alpha = 0.7f),
-                        uncheckedTrackColor = ink.copy(alpha = 0.15f),
-                        uncheckedBorderColor = Color.Transparent
-                    )
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            GlobalEqRow(eq)
-
+            // Orden: perfil (arriba), ecualizador global y luego los botones de puntos con el interruptor.
             Column(Modifier.alpha(if (settings.enabled) 1f else 0.4f)) {
                 // Perfiles: predefinidos y propios, en un desplegable.
                 EqProfilePicker(settings = settings, eq = eq)
@@ -215,6 +171,57 @@ fun EqualizerScreen(
                     HelpBadge(Str.get(R.string.eq_autosave_hint), Modifier.padding(start = 2.dp))
                 }
 
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            GlobalEqRow(eq)
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Agregar / quitar curvas: solo iconos (de 0 a 7).
+                val canAdd = settings.bands.size < EQ_BANDS
+                val canRemove = settings.bands.size > EQ_MIN_BANDS
+                PointButton(
+                    icon = Icons.Rounded.Remove, description = Str.get(R.string.eq_remove_curve),
+                    enabled = canRemove, filled = false,
+                    onClick = { if (selected >= 0) eq.removeBand(selected) }
+                )
+                Spacer(Modifier.width(8.dp))
+                PointButton(
+                    icon = Icons.Rounded.Add, description = Str.get(R.string.eq_add_curve),
+                    enabled = canAdd, filled = true,
+                    onClick = { val i = eq.addBand(); if (i >= 0) selectedRaw = i }
+                )
+                HelpBadge(
+                    Str.get(R.string.eq_help),
+                    Modifier.padding(start = 6.dp)
+                )
+                Spacer(Modifier.weight(1f))
+                // Estado del ecualizador junto a su interruptor.
+                Text(
+                    Str.get(if (settings.enabled) R.string.eq_state_on else R.string.eq_state_off),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (settings.enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+                Switch(
+                    checked = settings.enabled,
+                    onCheckedChange = { eq.setEnabled(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = accent,
+                        checkedBorderColor = Color.Transparent,
+                        uncheckedThumbColor = ink.copy(alpha = 0.7f),
+                        uncheckedTrackColor = ink.copy(alpha = 0.15f),
+                        uncheckedBorderColor = Color.Transparent
+                    )
+                )
+            }
+
+
+            Column(Modifier.alpha(if (settings.enabled) 1f else 0.4f)) {
                 Spacer(Modifier.height(16.dp))
 
                 // Gráfica de la curva + barra vertical de la ganancia general (derecha)
@@ -266,26 +273,6 @@ fun EqualizerScreen(
                             )
                         }
 
-                        // Indicador de dónde estás dentro de la gráfica.
-                        val maxV = scroll.maxValue
-                        val frac = if (maxV in 1 until Int.MAX_VALUE) scroll.value.toFloat() / maxV else 0f
-                        val trackInk = ink
-                        androidx.compose.foundation.Canvas(
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 3.dp)
-                                .fillMaxWidth(0.3f)
-                                .height(3.dp)
-                        ) {
-                            drawRoundRect(trackInk.copy(alpha = 0.12f), size = size, cornerRadius = CornerRadius(size.height / 2f))
-                            val tw = size.width * 0.5f
-                            drawRoundRect(
-                                accent.copy(alpha = 0.8f),
-                                topLeft = Offset(frac * (size.width - tw), 0f),
-                                size = Size(tw, size.height),
-                                cornerRadius = CornerRadius(size.height / 2f)
-                            )
-                        }
                     }
                 }
 
@@ -303,11 +290,11 @@ fun EqualizerScreen(
                             scroll.dispatchRawDelta(target - scroll.value)
                         }
                     },
+                    // Todo el ancho de la tarjeta: mismo margen a ambos lados.
                     modifier = Modifier
-                        .padding(start = 46.dp)
                         .fillMaxWidth()
                         .height(64.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(OVERVIEW_RADIUS))
                         .background(ink.copy(alpha = 0.07f))
                 )
             }

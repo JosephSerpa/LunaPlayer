@@ -31,6 +31,19 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.6.9",
+        listOf(
+            "Ecualizador reordenado: perfil arriba, luego el ecualizador global y después los puntos con el interruptor.",
+            "El interruptor del ecualizador dice «Activado» o «Desactivado».",
+            "Vista general a todo el ancho y con bordes continuos; nada tapa las etiquetas de la gráfica."
+        ),
+        listOf(
+            "Reordered equalizer: profile on top, then the global equalizer, then the points with the switch.",
+            "The equalizer switch now says “On” or “Off”.",
+            "Full-width overview with continuous edges; nothing covers the graph labels."
+        )
+    ),
+    Release(
         "2.6.8",
         listOf(
             "Buscador con filtros: busca solo en canciones, artistas, álbumes, géneros o carpetas.",

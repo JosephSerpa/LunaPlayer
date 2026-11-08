@@ -396,17 +396,23 @@ fun EqOverview(
             drawCircle(accent, 3.dp.toPx(), p)
         }
 
-        // Parte que se ve en la gráfica grande.
+        // Parte que se ve en la gráfica grande. Sus esquinas siguen exactamente las de la franja
+        // (mismo radio), así el borde es una línea continua también en los extremos.
         val x0 = windowStart * w
         val ww = windowSize * w
+        val r = OVERVIEW_RADIUS.toPx()
+        val sw = 1.5.dp.toPx()
         drawRoundRect(
             accent.copy(alpha = 0.14f), topLeft = Offset(x0, 0f), size = Size(ww, h),
-            cornerRadius = CornerRadius(12.dp.toPx())
+            cornerRadius = CornerRadius(r)
         )
         drawRoundRect(
-            accent.copy(alpha = 0.75f), topLeft = Offset(x0 + 0.75.dp.toPx(), 0.75.dp.toPx()),
-            size = Size(ww - 1.5.dp.toPx(), h - 1.5.dp.toPx()),
-            cornerRadius = CornerRadius(12.dp.toPx()), style = Stroke(1.5.dp.toPx())
+            accent.copy(alpha = 0.75f), topLeft = Offset(x0 + sw / 2f, sw / 2f),
+            size = Size(ww - sw, h - sw),
+            cornerRadius = CornerRadius(r - sw / 2f), style = Stroke(sw)
         )
     }
 }
+
+/** Radio de las esquinas de la vista general (la franja y su recuadro usan el mismo). */
+val OVERVIEW_RADIUS = 16.dp
