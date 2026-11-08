@@ -77,7 +77,9 @@ fun EqGraph(
     onBandDrag: (index: Int, freqHz: Float, gainDb: Float) -> Unit,
     modifier: Modifier = Modifier,
     /** Desplazamiento horizontal actual (la gráfica puede ser más ancha que la pantalla): fija las etiquetas de dB. */
-    scrollX: () -> Int = { 0 }
+    scrollX: () -> Int = { 0 },
+    /** 0..1: cuánto se nota la curva (al encender el ecualizador sube desde la línea de 0 dB). */
+    power: () -> Float = { 1f }
 ) {
     val accent = accentColor
     val inkC = ink
@@ -174,7 +176,7 @@ fun EqGraph(
         val line = Path()
         for (k in FREQS.indices) {
             val x = k / (FREQS.size - 1f) * w
-            val y = gainToY(total[k].toFloat().coerceIn(EQ_MIN_DB, EQ_MAX_DB), h)
+            val y = gainToY((total[k].toFloat() * power()).coerceIn(EQ_MIN_DB, EQ_MAX_DB), h)
             if (k == 0) line.moveTo(x, y) else line.lineTo(x, y)
         }
         val zeroY = gainToY(0f, h)
@@ -347,7 +349,8 @@ fun EqOverview(
     windowStart: Float,
     windowSize: Float,
     onCenter: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    power: () -> Float = { 1f }
 ) {
     val accent = accentColor
     val inkC = ink
@@ -379,7 +382,7 @@ fun EqOverview(
         val line = Path()
         for (k in FREQS.indices) {
             val x = k / (FREQS.size - 1f) * w
-            val y = gainToY(total[k].toFloat().coerceIn(EQ_MIN_DB, EQ_MAX_DB), h)
+            val y = gainToY((total[k].toFloat() * power()).coerceIn(EQ_MIN_DB, EQ_MAX_DB), h)
             if (k == 0) line.moveTo(x, y) else line.lineTo(x, y)
         }
         val fill = Path().apply {

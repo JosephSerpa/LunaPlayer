@@ -333,6 +333,8 @@ internal fun MarkRow(
 
         // Estrellas (tocar la misma cantidad otra vez las quita).
         val starBursts = List(5) { rememberBurst() }
+        // Al puntuar, las estrellas encendidas saltan en ola (más fuerte cuanto mayor la puntuación).
+        val starPops = List(5) { remember { Animatable(1f) } }
         Row(
             Modifier.weight(1f),
             horizontalArrangement = Arrangement.Center,
@@ -358,10 +360,17 @@ internal fun MarkRow(
                         .pressable {
                             val clearing = mark.rating == i
                             onRate(i)
-                            if (!clearing) scope.launch { starBursts[i - 1].play(BurstKind.STAR) }
+                            if (!clearing) {
+                                scope.launch { starBursts[i - 1].play(BurstKind.STAR, i / 5f) }
+                                for (k in 1..i) scope.launch {
+                                    kotlinx.coroutines.delay((k - 1) * 45L)
+                                    starPops[k - 1].snapTo(1f - 0.06f * i)
+                                    starPops[k - 1].animateTo(1f, spring(dampingRatio = 0.32f, stiffness = Spring.StiffnessMedium))
+                                }
+                            }
                         }
                         .padding(3.dp)
-                        .graphicsLayer { scaleX = s; scaleY = s }
+                        .graphicsLayer { val p = starPops[i - 1].value; scaleX = s * p; scaleY = s * p }
                 )
             }
         }
@@ -475,7 +484,8 @@ private fun FxHoleButton(fxActive: Boolean, accent: Color, onToggle: () -> Unit,
                         charge.snapTo(0f)
                         charge.animateTo(1f, tween(480, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
                         armed = true
-                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        // Un toque leve al estar listo (no una vibración larga).
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                     }
                     val up = waitForUpOrCancellation()
                     charging.cancel()
@@ -524,19 +534,20 @@ private val HOLE_POP = 96.dp
 private fun HoleCharge(progress: Float, armed: Boolean, accent: Color) {
     val t = rememberInfiniteTransition(label = "holeShake")
     val time by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "holeTime")
+    val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing)), label = "holeSpin")
     val pulse by animateFloatAsState(if (armed) 1f else 0f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMediumLow), label = "holeArmed")
     // Crece con un pequeño rebote al final.
     val grow = 1f - (1f - progress) * (1f - progress)
-    val scale = 0.35f + 0.65f * grow + 0.08f * pulse
+    val scale = 0.45f + 0.55f * grow + 0.04f * pulse
     Box(
         Modifier
             .size(HOLE_POP)
             .graphicsLayer {
-                val amp = (0.6f + 2.4f * progress + 0.8f * pulse) * density
+                // Temblor muy leve y lento: un vaivén suave, no una vibración.
+                val amp = (0.2f + 0.7f * progress) * density
                 val k = time * 2f * PI.toFloat()
-                // Temblor: varias frecuencias mezcladas para que no parezca un vaivén regular.
-                translationX = (sin(k * 23f) * 0.7f + sin(k * 37f) * 0.3f) * amp
-                translationY = (cos(k * 29f) * 0.7f + sin(k * 41f) * 0.3f) * amp
+                translationX = (sin(k * 3f) * 0.7f + sin(k * 5f) * 0.3f) * amp
+                translationY = (cos(k * 4f) * 0.7f + sin(k * 6f) * 0.3f) * amp
                 scaleX = scale
                 scaleY = scale
                 alpha = (progress * 2.5f).coerceAtMost(1f)
@@ -570,7 +581,7 @@ private fun HoleCharge(progress: Float, armed: Boolean, accent: Color) {
             active = true,
             tint = accent,
             size = 52.dp,
-            modifier = Modifier.graphicsLayer { rotationZ = 220f * progress + 360f * time * progress }
+            modifier = Modifier.graphicsLayer { rotationZ = 90f * progress + spin }
         )
     }
 }

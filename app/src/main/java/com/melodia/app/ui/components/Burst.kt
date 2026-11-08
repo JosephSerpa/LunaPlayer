@@ -36,9 +36,12 @@ class BurstState {
     internal val progress = Animatable(1f)
     internal var kind by mutableStateOf(BurstKind.HEART)
     internal var seed by mutableIntStateOf(0)
+    /** Fuerza del estallido (0..1): en las estrellas, mayor puntuación = más partículas y más lejos. */
+    internal var intensity by mutableStateOf(1f)
 
-    suspend fun play(kind: BurstKind) {
+    suspend fun play(kind: BurstKind, intensity: Float = 1f) {
         this.kind = kind
+        this.intensity = intensity.coerceIn(0f, 1f)
         seed += 1
         progress.snapTo(0f)
         progress.animateTo(1f, tween(DURATION_MS, easing = LinearEasing))
@@ -65,7 +68,7 @@ fun Modifier.burst(state: BurstState, color: Color, brokenColor: Color = Color(0
         val r = reach.toPx()
         when (state.kind) {
             BurstKind.HEART -> drawHearts(c, r, t, state.seed, color)
-            BurstKind.STAR -> drawSparks(c, r * 0.85f, t, state.seed, color)
+            BurstKind.STAR -> drawStars(c, r, t, state.seed, color, state.intensity)
             BurstKind.BROKEN -> drawBroken(c, r, t, state.seed, brokenColor)
         }
     }
@@ -170,5 +173,48 @@ private fun DrawScope.drawBroken(c: Offset, r: Float, t: Float, seed: Int, color
         val dist = r * (0.25f + 0.6f * e * (0.6f + 0.4f * rnd(seed, i, 1)))
         val p = Offset(c.x + cos(ang) * dist * (if (i % 2 == 0) 1f else -1f), c.y + sin(ang) * dist + drop)
         drawCircle(color.copy(alpha = fade * 0.8f), radius = (1.4f + rnd(seed, i, 2)).dp.toPx(), center = p)
+    }
+}
+
+private fun starPath(cx: Float, cy: Float, s: Float, rot: Float): Path = Path().apply {
+    // Estrella de cinco puntas.
+    val inner = s * 0.45f
+    for (k in 0 until 10) {
+        val a = (rot + k * PI / 5.0 - PI / 2.0).toFloat()
+        val rr = if (k % 2 == 0) s else inner
+        val x = cx + cos(a) * rr
+        val y = cy + sin(a) * rr
+        if (k == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+
+/**
+ * Estrellitas que saltan de la estrella tocada. Con más puntuación salen más (de 5 a 17), llegan más
+ * lejos y, en 4 y 5, se abre además un anillo de luz.
+ */
+private fun DrawScope.drawStars(c: Offset, r: Float, t: Float, seed: Int, color: Color, intensity: Float) {
+    val e = easeOut(t)
+    val fade = (1f - t * t).coerceIn(0f, 1f)
+    val reach = r * (0.7f + 0.65f * intensity)
+    if (intensity >= 0.75f) {
+        drawCircle(
+            color.copy(alpha = 0.5f * (1f - e) * intensity), radius = reach * (0.35f + 0.75f * e), center = c,
+            style = Stroke(width = (2.5.dp.toPx() * (1f - e)).coerceAtLeast(0.5f))
+        )
+    }
+    val n = 5 + (intensity * 12f).toInt()
+    for (i in 0 until n) {
+        val ang = (i * 2.0 * PI / n + rnd(seed, i, 0) * 0.7).toFloat()
+        val dist = reach * (0.3f + (0.65f + 0.45f * rnd(seed, i, 1)) * e)
+        // Caen un poco al final, como chispas.
+        val p = Offset(c.x + cos(ang) * dist, c.y + sin(ang) * dist + 5.dp.toPx() * t * t)
+        val s = (2.6f + 2.4f * rnd(seed, i, 2) + 1.2f * intensity).dp.toPx() * (1f - 0.5f * t)
+        drawPath(starPath(p.x, p.y, s, (t * 2.5f + rnd(seed, i, 3)) * PI.toFloat()), color.copy(alpha = fade))
+    }
+    // Destello breve en el centro.
+    if (t < 0.3f) {
+        val k = 1f - t / 0.3f
+        drawPath(starPath(c.x, c.y, r * (0.3f + 0.25f * intensity), 0f), color.copy(alpha = 0.3f * k))
     }
 }

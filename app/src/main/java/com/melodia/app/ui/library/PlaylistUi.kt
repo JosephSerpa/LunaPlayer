@@ -255,7 +255,7 @@ fun SongMenuDialog(
                         .pressable {
                             val clearing = mark.rating == i
                             onRate(i)
-                            if (!clearing) starScope.launch { starBursts[i - 1].play(com.melodia.app.ui.components.BurstKind.STAR) }
+                            if (!clearing) starScope.launch { starBursts[i - 1].play(com.melodia.app.ui.components.BurstKind.STAR, i / 5f) }
                         }
                         .padding(5.dp)
                 )

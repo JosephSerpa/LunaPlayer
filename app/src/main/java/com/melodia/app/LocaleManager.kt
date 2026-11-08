@@ -25,7 +25,11 @@ object LocaleManager {
     /** Devuelve el contexto con el idioma elegido (o el mismo si se sigue al sistema). */
     fun wrap(context: Context): Context {
         val code = saved(context)
-        if (code == SYSTEM) return context
+        if (code == SYSTEM) {
+            // Al volver a "Sistema" tras elegir otro idioma, fechas y números también vuelven al del teléfono.
+            runCatching { Locale.setDefault(context.resources.configuration.locales[0]) }
+            return context
+        }
         val locale = Locale(code)
         Locale.setDefault(locale)
         val config = Configuration(context.resources.configuration)

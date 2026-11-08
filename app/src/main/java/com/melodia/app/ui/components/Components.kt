@@ -157,7 +157,7 @@ fun AlbumMarkBar(mark: SongMark?, onLike: () -> Unit, onRate: (Int) -> Unit, mod
                     // Tocar la misma cantidad la quita: entonces no hay destellos.
                     val clearing = (mark?.rating ?: 0) == n
                     onRate(n)
-                    if (!clearing) scope.launch { starBursts[n - 1].play(BurstKind.STAR) }
+                    if (!clearing) scope.launch { starBursts[n - 1].play(BurstKind.STAR, n / 5f) }
                 },
                 contentAlignment = Alignment.Center
             ) {

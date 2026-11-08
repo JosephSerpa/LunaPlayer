@@ -31,6 +31,21 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.7.0",
+        listOf(
+            "Información técnica: toca la etiqueta de formato en el reproductor para ver el archivo a fondo (frecuencia, bits, canales, compresión, ReplayGain, conversión, procesamiento y salida).",
+            "Ecualizador: botón de encendido junto al perfil, con animación al encender; autoguardado sobre la gráfica y el ecualizador global al final.",
+            "Estrellas con partículas: cuanto más alta la puntuación, más estrellas saltan.",
+            "Aviso del agujero negro más suave."
+        ),
+        listOf(
+            "Technical info: tap the format label in the player to see the file in depth (sample rate, bits, channels, compression, ReplayGain, conversion, processing and output).",
+            "Equalizer: power button next to the profile, with a turn-on animation; auto-save above the graph and the global equalizer at the end.",
+            "Star particles: the higher the rating, the more stars burst out.",
+            "Softer black hole hint."
+        )
+    ),
+    Release(
         "2.6.9",
         listOf(
             "Ecualizador reordenado: perfil arriba, luego el ecualizador global y después los puntos con el interruptor.",

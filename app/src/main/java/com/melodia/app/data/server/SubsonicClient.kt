@@ -155,6 +155,10 @@ object SubsonicClient {
     suspend fun starAlbum(c: ServerConfig, id: String) { call(c, "star", mapOf("albumId" to id)) }
     suspend fun unstarAlbum(c: ServerConfig, id: String) { call(c, "unstar", mapOf("albumId" to id)) }
 
+    /** Datos técnicos de una canción del servidor (formato original, bits, ReplayGain…), o null. */
+    suspend fun songDetails(c: ServerConfig, id: String): JSONObject? =
+        runCatching { call(c, "getSong", mapOf("id" to id)).optJSONObject("song") }.getOrNull()
+
     suspend fun star(c: ServerConfig, id: String) { call(c, "star", mapOf("id" to id)) }
     suspend fun unstar(c: ServerConfig, id: String) { call(c, "unstar", mapOf("id" to id)) }
 

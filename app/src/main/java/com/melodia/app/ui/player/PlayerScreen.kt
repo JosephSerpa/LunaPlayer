@@ -561,6 +561,9 @@ fun PlayerScreen(
                     }
 
                     val audioLabel = current.audio.label
+                    // Tocar la etiqueta abre la ficha técnica del archivo.
+                    var showTech by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+                    if (showTech) TrackInfoDialog(current = current, onDismiss = { showTech = false })
                     if (audioLabel.isNotBlank()) {
                         // En horizontal se esconde (poco alto disponible).
                         Column(
@@ -579,6 +582,7 @@ fun PlayerScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 modifier = Modifier
+                                    .pressable { showTech = true }
                                     .glass(RoundedCornerShape(50), fill = 0.07f, border = 0.12f)
                                     .padding(horizontal = 14.dp, vertical = 5.dp)
                             )

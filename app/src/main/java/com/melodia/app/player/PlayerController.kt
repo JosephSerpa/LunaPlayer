@@ -37,7 +37,15 @@ import kotlinx.coroutines.launch
 data class AudioInfo(
     val format: String = "",
     val bitrateKbps: Int = 0,
-    val sampleRateHz: Int = 0
+    val sampleRateHz: Int = 0,
+    /** Lo que entrega el decodificador (para la ficha técnica). */
+    val channels: Int = 0,
+    val mime: String = "",
+    val codecs: String = "",
+    /** Bits por muestra de lo decodificado (solo si el formato lo indica, p. ej. WAV). */
+    val pcmBits: Int = 0,
+    val path: String = "",
+    val sizeBytes: Long = 0L
 ) {
     /** "MP3 · 320 kbps · 44.1 kHz" (omite lo que no se conoce). */
     val label: String
@@ -316,7 +324,22 @@ class PlayerController(context: Context) {
             kbps = (size * 8.0 / durationMs).toInt()   // bits por ms = kbps
         }
         val rate = fmt?.sampleRate?.takeIf { it > 0 } ?: 0
-        return AudioInfo(byExt.ifBlank { byMime }, kbps, rate)
+        val bits = when (fmt?.pcmEncoding) {
+            C.ENCODING_PCM_8BIT -> 8
+            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_16BIT_BIG_ENDIAN -> 16
+            C.ENCODING_PCM_24BIT -> 24
+            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
+            else -> 0
+        }
+        return AudioInfo(
+            byExt.ifBlank { byMime }, kbps, rate,
+            channels = fmt?.channelCount?.takeIf { it > 0 } ?: 0,
+            mime = fmt?.sampleMimeType.orEmpty(),
+            codecs = fmt?.codecs.orEmpty(),
+            pcmBits = bits,
+            path = path,
+            sizeBytes = size
+        )
     }
 
     /** Si la app está a la vista. Sin nadie mirando, el avance se revisa 1 vez por segundo (no 4). */

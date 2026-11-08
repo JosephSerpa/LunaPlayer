@@ -14,8 +14,8 @@ android {
         applicationId = "com.lunaplayer.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 238
-        versionName = "2.6.9"
+        versionCode = 239
+        versionName = "2.7.0"
 
         // Clave de la API de Last.fm (https://www.last.fm/api/account/create). Se lee de local.properties
         // (lastfm.key / lastfm.secret) o de las propiedades de Gradle; sin ellas, cada usuario puede poner la suya en Ajustes.

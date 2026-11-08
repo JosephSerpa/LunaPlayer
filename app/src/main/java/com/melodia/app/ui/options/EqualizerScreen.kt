@@ -1,5 +1,20 @@
 package com.melodia.app.ui.options
 
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import com.melodia.app.Str
 import com.melodia.app.R
 
@@ -143,44 +158,24 @@ fun EqualizerScreen(
                 .glass(RoundedCornerShape(32.dp), fill = 0.07f)
                 .padding(18.dp)
         ) {
-            // Orden: perfil (arriba), ecualizador global y luego los botones de puntos con el interruptor.
-            Column(Modifier.alpha(if (settings.enabled) 1f else 0.4f)) {
-                // Perfiles: predefinidos y propios, en un desplegable.
-                EqProfilePicker(settings = settings, eq = eq)
-
-                // Autoguardado: los cambios se guardan solos en el perfil propio en uso.
-                val autoSave by eq.autoSave.collectAsState()
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = autoSave,
-                        onCheckedChange = { eq.setAutoSave(it) },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = accent,
-                            checkmarkColor = onAccent,
-                            uncheckedColor = ink.copy(alpha = 0.5f)
-                        )
-                    )
-                    Text(
-                        Str.get(R.string.eq_autosave),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = ink.copy(alpha = 0.85f)
-                    )
-                    HelpBadge(Str.get(R.string.eq_autosave_hint), Modifier.padding(start = 2.dp))
-                }
-
+            // Arriba: el perfil y, a su lado, el botón principal de encendido.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EqProfilePicker(
+                    settings = settings, eq = eq,
+                    modifier = Modifier.weight(1f).alpha(if (settings.enabled) 1f else 0.55f)
+                )
+                Spacer(Modifier.width(12.dp))
+                EqPowerButton(on = settings.enabled, onToggle = { eq.setEnabled(it) })
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
 
-            GlobalEqRow(eq)
-
-            Spacer(Modifier.height(4.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Agregar / quitar curvas: solo iconos (de 0 a 7).
+            // Puntos (agregar/quitar) a la izquierda y autoguardado a la derecha, justo sobre la gráfica.
+            val autoSave by eq.autoSave.collectAsState()
+            Row(
+                Modifier.alpha(if (settings.enabled) 1f else 0.4f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 val canAdd = settings.bands.size < EQ_BANDS
                 val canRemove = settings.bands.size > EQ_MIN_BANDS
                 PointButton(
@@ -194,35 +189,34 @@ fun EqualizerScreen(
                     enabled = canAdd, filled = true,
                     onClick = { val i = eq.addBand(); if (i >= 0) selectedRaw = i }
                 )
-                HelpBadge(
-                    Str.get(R.string.eq_help),
-                    Modifier.padding(start = 6.dp)
-                )
+                HelpBadge(Str.get(R.string.eq_help), Modifier.padding(start = 6.dp))
                 Spacer(Modifier.weight(1f))
-                // Estado del ecualizador junto a su interruptor.
-                Text(
-                    Str.get(if (settings.enabled) R.string.eq_state_on else R.string.eq_state_off),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (settings.enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
-                Switch(
-                    checked = settings.enabled,
-                    onCheckedChange = { eq.setEnabled(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = accent,
-                        checkedBorderColor = Color.Transparent,
-                        uncheckedThumbColor = ink.copy(alpha = 0.7f),
-                        uncheckedTrackColor = ink.copy(alpha = 0.15f),
-                        uncheckedBorderColor = Color.Transparent
+                Checkbox(
+                    checked = autoSave,
+                    onCheckedChange = { eq.setAutoSave(it) },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = accent,
+                        checkmarkColor = onAccent,
+                        uncheckedColor = ink.copy(alpha = 0.5f)
                     )
                 )
+                Text(
+                    Str.get(R.string.eq_autosave_short),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = ink.copy(alpha = 0.85f),
+                    maxLines = 1
+                )
+                HelpBadge(Str.get(R.string.eq_autosave_hint), Modifier.padding(start = 2.dp))
             }
 
-
+            // Al encender, la curva sube desde 0 dB hasta su forma (y baja al apagar).
+            val power by animateFloatAsState(
+                if (settings.enabled) 1f else 0f,
+                tween(650, easing = FastOutSlowInEasing),
+                label = "eqPower"
+            )
             Column(Modifier.alpha(if (settings.enabled) 1f else 0.4f)) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
 
                 // Gráfica de la curva + barra vertical de la ganancia general (derecha)
                 val scroll = rememberScrollState()
@@ -269,7 +263,8 @@ fun EqualizerScreen(
                                 onSelect = { selectedRaw = it },
                                 onBandDrag = { i, hz, db -> eq.setFrequencyAndGain(i, hz, db) },
                                 modifier = Modifier.width(viewport * 2).fillMaxHeight(),
-                                scrollX = { scroll.value }
+                                scrollX = { scroll.value },
+                                power = { power }
                             )
                         }
 
@@ -290,6 +285,7 @@ fun EqualizerScreen(
                             scroll.dispatchRawDelta(target - scroll.value)
                         }
                     },
+                    power = { power },
                     // Todo el ancho de la tarjeta: mismo margen a ambos lados.
                     modifier = Modifier
                         .fillMaxWidth()
@@ -434,12 +430,84 @@ fun EqualizerScreen(
                     .padding(vertical = 13.dp)
             )
         }
+
+        // Ecualizador global: al final de todo.
+        Spacer(Modifier.height(16.dp))
+        Column(
+            Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .glass(RoundedCornerShape(32.dp), fill = 0.07f)
+                .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 2.dp)
+        ) {
+            GlobalEqRow(eq)
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
 // Controles
 // ---------------------------------------------------------------------------
+
+/**
+ * Botón principal: enciende o apaga el ecualizador. Encendido se llena del color del tema con un halo
+ * suave; al encenderlo sale una onda que se abre y el icono da un pequeño salto.
+ */
+@Composable
+private fun EqPowerButton(on: Boolean, onToggle: (Boolean) -> Unit) {
+    val accent = accentColor
+    val inkC = ink
+    val onAcc = accent.onAccent()
+    val scope = rememberCoroutineScope()
+    val p by animateFloatAsState(if (on) 1f else 0f, tween(550, easing = FastOutSlowInEasing), label = "power")
+    val wave = remember { Animatable(1f) }
+    val bump = remember { Animatable(1f) }
+    val label = Str.get(if (on) R.string.eq_state_on else R.string.eq_state_off)
+    Box(
+        Modifier
+            .size(54.dp)
+            .semantics {
+                role = Role.Switch
+                stateDescription = label
+            }
+            .pressable {
+                val next = !on
+                onToggle(next)
+                if (next) {
+                    scope.launch { wave.snapTo(0f); wave.animateTo(1f, tween(750, easing = LinearOutSlowInEasing)) }
+                    scope.launch {
+                        bump.snapTo(0.82f)
+                        bump.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow))
+                    }
+                }
+            }
+            .drawBehind {
+                val r = size.minDimension / 2f
+                // Halo
+                if (p > 0.01f) drawCircle(
+                    Brush.radialGradient(listOf(accent.copy(alpha = 0.32f * p), Color.Transparent), center = center, radius = r * 1.45f),
+                    radius = r * 1.45f
+                )
+                // Onda al encender
+                val w = wave.value
+                if (w < 1f) drawCircle(
+                    accent.copy(alpha = 0.55f * (1f - w)), radius = r * (1f + 0.55f * w),
+                    style = Stroke(width = 2.dp.toPx() * (1f - w) + 0.5f)
+                )
+                // Botón
+                drawCircle(androidx.compose.ui.graphics.lerp(inkC.copy(alpha = 0.08f), accent, p), radius = r)
+                if (p < 0.99f) drawCircle(inkC.copy(alpha = 0.2f * (1f - p)), radius = r - 0.5.dp.toPx(), style = Stroke(1.dp.toPx()))
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Rounded.PowerSettingsNew,
+            Str.get(R.string.eq_power),
+            tint = androidx.compose.ui.graphics.lerp(inkC.copy(alpha = 0.75f), onAcc, p),
+            modifier = Modifier.size(26.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value }
+        )
+    }
+}
 
 /** Botón redondo con un solo icono (+ / −) para agregar o quitar puntos. */
 @Composable
@@ -518,7 +586,7 @@ private fun fromLogFraction(f: Float, lo: Float, hi: Float): Float =
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
+private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine, modifier: Modifier = Modifier) {
     val accent = accentColor
     val profiles by eq.profiles.collectAsState()
     val assignments by eq.assignments.collectAsState()
@@ -526,7 +594,7 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine) {
     var naming by remember { mutableStateOf(false) }
     val palette = LocalPalette.current
 
-    Box {
+    Box(modifier) {
         Row(
             Modifier
                 .fillMaxWidth()
