@@ -410,4 +410,10 @@
     <string name="changelog_lang">en</string>
     <string name="fx_link">Speed and pitch linked</string>
     <string name="fx_link_help">When you move the speed, the pitch follows it (and the other way round), like a slowed-down record. It makes tuning the effect faster. Turn it off to move each one separately.</string>
+    <string name="search_in_all">All</string>
+    <string name="search_in_genre">Genres</string>
+    <string name="search_sort_relevance">Relevance</string>
+    <string name="search_sort_stars">Stars</string>
+    <string name="search_sort_likes">Likes</string>
+    <string name="search_filters_help">Choose where to look for what you type: everything, or only the song name, artist, album, genre or folder. Then sort the results by relevance, by stars (highest first) or with your likes first.</string>
 </resources>

@@ -410,4 +410,10 @@
     <string name="changelog_lang">es</string>
     <string name="fx_link">Velocidad y tono unidos</string>
     <string name="fx_link_help">Al mover la velocidad, el tono la acompaña (y al revés), como un disco más lento. Así ajustas el efecto más rápido. Apágalo para mover cada uno por separado.</string>
+    <string name="search_in_all">Todo</string>
+    <string name="search_in_genre">Géneros</string>
+    <string name="search_sort_relevance">Relevancia</string>
+    <string name="search_sort_stars">Estrellas</string>
+    <string name="search_sort_likes">Me gusta</string>
+    <string name="search_filters_help">Elige dónde buscar lo que escribes: en todo, solo en el nombre de la canción, el artista, el álbum, el género o la carpeta. Luego ordena los resultados por relevancia, por estrellas (de más a menos) o con tus me gusta primero.</string>
 </resources>

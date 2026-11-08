@@ -31,6 +31,17 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.6.8",
+        listOf(
+            "Buscador con filtros: busca solo en canciones, artistas, álbumes, géneros o carpetas.",
+            "Ordena los resultados por estrellas o con tus me gusta primero."
+        ),
+        listOf(
+            "Search filters: look only in songs, artists, albums, genres or folders.",
+            "Sort the results by stars or with your likes first."
+        )
+    ),
+    Release(
         "2.6.7",
         listOf(
             "Novedades: este apartado, con los cambios de cada versión.",

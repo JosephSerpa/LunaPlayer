@@ -1,5 +1,7 @@
 package com.melodia.app.ui.home
 
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.foundation.horizontalScroll
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
@@ -369,20 +371,57 @@ fun HomeScreen(
     }
 }
 
-/** Buscador de canciones: se abre con la lupa de Inicio. */
+/** Dónde se busca el texto escrito. */
+private enum class SearchField { ALL, TITLE, ARTIST, ALBUM, GENRE, FOLDER }
+
+/** Cómo se ordenan los resultados. */
+private enum class SearchSort { RELEVANCE, STARS, LIKES }
+
+/** Nombre de la carpeta de una canción (la última parte de su ruta). */
+private fun folderName(s: Song) = s.path.substringBeforeLast('/', "").substringAfterLast('/')
+
+/**
+ * Buscador de canciones: se abre con la lupa de Inicio. Con resultados en pantalla se puede elegir
+ * dónde buscar (todo, canción, artista, álbum, género o carpeta) y ordenarlos por estrellas o me gusta.
+ */
 @Composable
 internal fun SearchSongs(library: LibraryState, onBack: () -> Unit, onPlaySong: (List<Song>, Int) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
+    var fieldRaw by rememberSaveable { mutableStateOf(SearchField.ALL.ordinal) }
+    var sortRaw by rememberSaveable { mutableStateOf(SearchSort.RELEVANCE.ordinal) }
+    val field = SearchField.entries[fieldRaw]
+    val sort = SearchSort.entries[sortRaw]
+    val marks = LocalMarks.current
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val q = remember(query) { SearchKeys.norm(query.trim()) }
-    val results = remember(q, library.songs, library.songKeys) {
-        if (q.isEmpty()) emptyList()
-        else {
+    // Se filtra y ordena fuera del hilo de la interfaz: con miles de canciones no traba al escribir.
+    val results by produceState(emptyList<Song>(), q, field, sort, library.songs, library.songKeys, marks) {
+        value = if (q.isEmpty()) emptyList() else withContext(Dispatchers.Default) {
             val words = q.split(' ').filter { it.isNotEmpty() }
-            library.songs.filter { s ->
-                val k = library.songKeys[s.id] ?: SearchKeys.song(s)
-                words.all { it in k }
+            fun key(s: Song): String = when (field) {
+                SearchField.ALL -> library.songKeys[s.id] ?: SearchKeys.song(s)
+                SearchField.TITLE -> SearchKeys.norm(s.title)
+                SearchField.ARTIST -> SearchKeys.norm(s.artist)
+                SearchField.ALBUM -> SearchKeys.norm(s.album)
+                SearchField.GENRE -> SearchKeys.norm(s.genre)
+                SearchField.FOLDER -> SearchKeys.norm(folderName(s))
+            }
+            val found = library.songs.filter { s -> val k = key(s); words.all { it in k } }
+            // "Relevancia" agrupa por lo que se busca (p. ej. por artista y luego por álbum).
+            val grouped = when (field) {
+                SearchField.ARTIST -> found.sortedWith(compareBy({ it.artist.lowercase() }, { it.album.lowercase() }))
+                SearchField.ALBUM -> found.sortedWith(compareBy({ it.album.lowercase() }, { it.artist.lowercase() }))
+                SearchField.GENRE -> found.sortedWith(compareBy({ it.genre.lowercase() }, { it.artist.lowercase() }))
+                SearchField.FOLDER -> found.sortedWith(compareBy({ folderName(it).lowercase() }, { it.title.lowercase() }))
+                else -> found
+            }
+            when (sort) {
+                SearchSort.RELEVANCE -> grouped
+                SearchSort.STARS -> grouped.sortedByDescending { marks[it.id]?.rating ?: 0 }
+                SearchSort.LIKES -> grouped.sortedWith(
+                    compareByDescending<Song> { marks[it.id]?.liked == true }.thenByDescending { marks[it.id]?.rating ?: 0 }
+                )
             }
         }
     }
@@ -421,6 +460,8 @@ internal fun SearchSongs(library: LibraryState, onBack: () -> Unit, onPlaySong: 
                 }
             }
         }
+        // Filtros: aparecen cuando hay algo escrito.
+        if (q.isNotEmpty()) SearchFilters(field, sort, results.size, onField = { fieldRaw = it.ordinal }, onSort = { sortRaw = it.ordinal })
         if (q.isNotEmpty() && results.isEmpty()) {
             Text(
                 Str.get(R.string.no_results),
@@ -435,6 +476,65 @@ internal fun SearchSongs(library: LibraryState, onBack: () -> Unit, onPlaySong: 
             }
         }
     }
+}
+
+@Composable
+private fun SearchFilters(
+    field: SearchField,
+    sort: SearchSort,
+    count: Int,
+    onField: (SearchField) -> Unit,
+    onSort: (SearchSort) -> Unit
+) {
+    val accent = accentColor
+    val chipInk = ink
+    val chipInverse = com.melodia.app.ui.theme.inverse
+    @Composable
+    fun chip(label: String, on: Boolean, onColor: Color, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+        val fg = if (on) (if (onColor == accent) accent.onAccent() else chipInverse) else chipInk.copy(alpha = 0.8f)
+        Row(
+            Modifier
+                .pressable(onClick)
+                .background(if (on) onColor else chipInk.copy(alpha = 0.08f), RoundedCornerShape(50))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (icon != null) {
+                Icon(icon, null, tint = if (on) fg else accent, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(label, style = MaterialTheme.typography.labelLarge, color = fg)
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val fields = listOf(
+            SearchField.ALL to Str.get(R.string.search_in_all),
+            SearchField.TITLE to Str.get(R.string.tab_songs),
+            SearchField.ARTIST to Str.get(R.string.tab_artists),
+            SearchField.ALBUM to Str.get(R.string.tab_albums),
+            SearchField.GENRE to Str.get(R.string.search_in_genre),
+            SearchField.FOLDER to Str.get(R.string.tab_folders)
+        )
+        for ((f, label) in fields) chip(label, field == f, chipInk) { onField(f) }
+        Box(Modifier.width(1.dp).height(20.dp).background(chipInk.copy(alpha = 0.15f)))
+        chip(Str.get(R.string.search_sort_relevance), sort == SearchSort.RELEVANCE, accent) { onSort(SearchSort.RELEVANCE) }
+        chip(Str.get(R.string.search_sort_stars), sort == SearchSort.STARS, accent, Icons.Rounded.Star) { onSort(SearchSort.STARS) }
+        chip(Str.get(R.string.search_sort_likes), sort == SearchSort.LIKES, accent, Icons.Rounded.Favorite) { onSort(SearchSort.LIKES) }
+        HelpBadge(Str.get(R.string.search_filters_help))
+    }
+    Text(
+        Str.plural(R.plurals.songs_count, count),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 24.dp, top = 2.dp, bottom = 4.dp)
+    )
 }
 
 @Composable
