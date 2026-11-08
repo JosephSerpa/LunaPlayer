@@ -31,6 +31,21 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.7.1",
+        listOf(
+            "Perfiles del ecualizador: vista previa de la curva junto a cada uno.",
+            "Mantén presionado un perfil para cambiarle el nombre, duplicarlo o exportarlo.",
+            "Al guardar un perfil, el nombre sugerido es el del dispositivo que está sonando.",
+            "Agujero negro: al mantenerlo presionado, el menú se abre solo en algo más de un segundo."
+        ),
+        listOf(
+            "Equalizer profiles: a preview of the curve next to each one.",
+            "Hold a profile to rename, duplicate or export it.",
+            "When saving a profile, the suggested name is the device that is playing.",
+            "Black hole: when held, its menu opens by itself in just over a second."
+        )
+    ),
+    Release(
         "2.7.0",
         listOf(
             "Información técnica: toca la etiqueta de formato en el reproductor para ver el archivo a fondo (frecuencia, bits, canales, compresión, ReplayGain, conversión, procesamiento y salida).",

@@ -464,4 +464,10 @@
     <string name="ti_mixer_note">Android mixes audio at the system rate, so it may resample before output. On Bluetooth, the codec is chosen by the system.</string>
     <string name="eq_autosave_short">Auto-save</string>
     <string name="eq_power">Turn the equalizer on or off</string>
+    <string name="eq_rename_profile">Rename</string>
+    <string name="eq_duplicate_profile">Duplicate</string>
+    <string name="eq_export_profile">Export</string>
+    <string name="eq_export_done">Profile exported</string>
+    <string name="eq_export_failed">Could not export the profile</string>
+    <string name="eq_name_taken">A profile with that name already exists</string>
 </resources>

@@ -169,6 +169,75 @@ class EqualizerEngine(private val context: Context) {
         update { it.copy(preset = clean) }
     }
 
+    /** "Nombre", o "Nombre (1)", "Nombre (2)"… si ya existe un perfil con ese nombre. */
+    fun uniqueName(base: String): String {
+        val clean = base.trim().replace(";", "").replace("|", "").replace("=", "")
+        val taken = _profiles.value.map { it.preset }.toSet()
+        if (clean !in taken) return clean
+        var n = 1
+        while ("$clean ($n)" in taken) n++
+        return "$clean ($n)"
+    }
+
+    /**
+     * El dispositivo por el que suena ahora. Android no lo dice directamente, pero sigue un orden fijo:
+     * USB, luego auriculares con cable, luego Bluetooth y si no, el altavoz.
+     */
+    fun activeDevice(): OutputDevice? {
+        fun rank(t: Int) = when (t) {
+            android.media.AudioDeviceInfo.TYPE_USB_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_DEVICE,
+            android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY -> 0
+            android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            android.media.AudioDeviceInfo.TYPE_LINE_ANALOG -> 1
+            android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+            android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER, android.media.AudioDeviceInfo.TYPE_HEARING_AID -> 2
+            android.media.AudioDeviceInfo.TYPE_HDMI -> 3
+            else -> 4
+        }
+        return _devices.value.minByOrNull { rank(it.type) }
+    }
+
+    /** Cambia el nombre de un perfil (y de su asignación a un dispositivo, si la tiene). */
+    fun renameProfile(old: String, newName: String) {
+        val clean = newName.trim().replace(";", "").replace("|", "").replace("=", "")
+        if (clean.isBlank() || clean == old || _profiles.value.any { it.preset == clean }) return
+        _profiles.value = _profiles.value.map { if (it.preset == old) it.copy(preset = clean) else it }
+        storeProfiles()
+        _assignments.value = _assignments.value.mapValues { (_, a) -> if (a.profile == old) a.copy(profile = clean) else a }
+        storeAssignments()
+        if (_settings.value.preset == old) update { it.copy(preset = clean) }
+    }
+
+    /** Copia de un perfil con el siguiente nombre libre ("Nombre (1)"…). */
+    fun duplicateProfile(name: String): String? {
+        val p = _profiles.value.firstOrNull { it.preset == name } ?: return null
+        val copy = uniqueName(name)
+        _profiles.value = _profiles.value + p.copy(preset = copy)
+        storeProfiles()
+        return copy
+    }
+
+    /** Perfil en JSON legible, para guardarlo como archivo o compartirlo. */
+    fun exportProfile(name: String): String? {
+        val p = _profiles.value.firstOrNull { it.preset == name } ?: return null
+        val bands = org.json.JSONArray()
+        p.bands.forEach { b ->
+            bands.put(
+                org.json.JSONObject()
+                    .put("type", b.type.name).put("frequencyHz", b.freqHz.toDouble())
+                    .put("gainDb", b.gainDb.toDouble()).put("q", b.q.toDouble())
+            )
+        }
+        return org.json.JSONObject()
+            .put("app", "Luna player").put("kind", "equalizer-profile").put("version", 1)
+            .put("name", p.preset)
+            .put("preampDb", p.preampDb.toDouble())
+            .put("extraVolumeDb", p.boostDb.toDouble())
+            .put("limiter", p.limiter)
+            .put("bands", bands)
+            .toString(2)
+    }
+
     fun applyProfile(profile: EqSettings) = update {
         profile.copy(enabled = it.enabled)
     }

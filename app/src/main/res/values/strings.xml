@@ -464,4 +464,10 @@
     <string name="ti_mixer_note">Android mezcla el audio a la frecuencia del sistema, así que puede remuestrear antes de la salida. En Bluetooth, el códec lo elige el sistema.</string>
     <string name="eq_autosave_short">Autoguardar</string>
     <string name="eq_power">Encender o apagar el ecualizador</string>
+    <string name="eq_rename_profile">Cambiar nombre</string>
+    <string name="eq_duplicate_profile">Duplicar</string>
+    <string name="eq_export_profile">Exportar</string>
+    <string name="eq_export_done">Perfil exportado</string>
+    <string name="eq_export_failed">No se pudo exportar el perfil</string>
+    <string name="eq_name_taken">Ya existe un perfil con ese nombre</string>
 </resources>

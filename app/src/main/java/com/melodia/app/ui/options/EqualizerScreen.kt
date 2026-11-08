@@ -1,5 +1,10 @@
 package com.melodia.app.ui.options
 
+import com.melodia.app.ui.components.pressableWithLongClick
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -592,7 +597,26 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine, modifier:
     val assignments by eq.assignments.collectAsState()
     var menuOpen by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
+    // Mantener presionado un perfil: menú con renombrar, duplicar y exportar.
+    var actionsFor by remember { mutableStateOf<String?>(null) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var exporting by remember { mutableStateOf<String?>(null) }
     val palette = LocalPalette.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val name = exporting
+        exporting = null
+        if (uri == null || name == null) return@rememberLauncherForActivityResult
+        val ok = runCatching {
+            val json = eq.exportProfile(name) ?: error("no profile")
+            context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } ?: error("no stream")
+        }.isSuccess
+        android.widget.Toast.makeText(
+            context, Str.get(if (ok) R.string.eq_export_done else R.string.eq_export_failed), android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
 
     Box(modifier) {
         Row(
@@ -622,9 +646,18 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine, modifier:
             if (profiles.isNotEmpty()) {
                 MenuLabel(Str.get(R.string.eq_my_profiles))
                 profiles.forEach { p ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
+                    Box {
+                        Row(
+                            Modifier
+                                .widthIn(min = 260.dp)
+                                .pressableWithLongClick(
+                                    onLongClick = { actionsFor = p.preset },
+                                    onClick = { eq.applyProfile(p); menuOpen = false }
+                                )
+                                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
                                 ProfileText(p.preset, settings.preset == p.preset)
                                 assignments.values.firstOrNull { it.profile == p.preset }?.let {
                                     Text(
@@ -634,16 +667,42 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine, modifier:
                                     )
                                 }
                             }
-                        },
-                        onClick = { eq.applyProfile(p); menuOpen = false },
-                        trailingIcon = {
+                            Spacer(Modifier.width(10.dp))
+                            // Vista previa de la curva del perfil.
+                            ProfileMiniCurve(p)
                             Icon(
                                 Icons.Rounded.DeleteOutline, Str.get(R.string.eq_delete_profile),
                                 tint = ink.copy(alpha = 0.5f),
-                                modifier = Modifier.pressable { eq.deleteProfile(p.preset) }
+                                modifier = Modifier.padding(start = 6.dp).size(36.dp).pressable { eq.deleteProfile(p.preset) }.padding(6.dp)
                             )
                         }
-                    )
+                        DropdownMenu(
+                            expanded = actionsFor == p.preset,
+                            onDismissRequest = { actionsFor = null },
+                            modifier = Modifier.background(palette.bg.copy(alpha = 0.98f))
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(Str.get(R.string.eq_rename_profile), color = ink) },
+                                leadingIcon = { Icon(Icons.Rounded.Edit, null, tint = ink) },
+                                onClick = { actionsFor = null; menuOpen = false; renaming = p.preset }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(Str.get(R.string.eq_duplicate_profile), color = ink) },
+                                leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, tint = ink) },
+                                onClick = { actionsFor = null; eq.duplicateProfile(p.preset) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(Str.get(R.string.eq_export_profile), color = ink) },
+                                leadingIcon = { Icon(Icons.Rounded.IosShare, null, tint = ink) },
+                                onClick = {
+                                    actionsFor = null
+                                    menuOpen = false
+                                    exporting = p.preset
+                                    exportLauncher.launch("${p.preset}.json")
+                                }
+                            )
+                        }
+                    }
                 }
             }
             if (profiles.isEmpty()) MenuLabel(Str.get(R.string.eq_no_profiles))
@@ -657,11 +716,107 @@ private fun EqProfilePicker(settings: EqSettings, eq: EqualizerEngine, modifier:
     }
 
     if (naming) {
+        // Nombre por defecto: el del dispositivo que está sonando, con (1), (2)… si ya existe.
         SaveProfileDialog(
             eq = eq,
-            initial = if (profiles.none { it.preset == settings.preset }) "" else settings.preset,
+            initial = eq.activeDevice()?.name?.let { eq.uniqueName(it) }.orEmpty(),
             onDismiss = { naming = false }
         )
+    }
+    renaming?.let { old ->
+        RenameProfileDialog(
+            initial = old,
+            taken = profiles.map { it.preset }.toSet() - old,
+            onDismiss = { renaming = null },
+            onConfirm = { eq.renameProfile(old, it); renaming = null }
+        )
+    }
+}
+
+/** Curva de un perfil en miniatura: se entiende de un vistazo si sube graves, agudos, etc. */
+@Composable
+private fun ProfileMiniCurve(profile: EqSettings) {
+    val accent = accentColor
+    val inkC = ink
+    val curve = remember(profile) { EqMath.totalCurve(profile, MINI_FREQS) }
+    Canvas(Modifier.size(width = 54.dp, height = 24.dp)) {
+        val w = size.width
+        val h = size.height
+        val zeroY = h / 2f
+        val range = 15f
+        drawRoundRect(inkC.copy(alpha = 0.06f), cornerRadius = CornerRadius(6.dp.toPx()))
+        drawLine(inkC.copy(alpha = 0.22f), Offset(0f, zeroY), Offset(w, zeroY), strokeWidth = 1.dp.toPx())
+        val path = androidx.compose.ui.graphics.Path()
+        for (k in curve.indices) {
+            val x = k / (curve.size - 1f) * w
+            val y = zeroY - (curve[k].toFloat().coerceIn(-range, range) / range) * (h / 2f - 2.dp.toPx())
+            if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(
+            path, accent,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                1.8.dp.toPx(),
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+        )
+    }
+}
+
+@Composable
+private fun RenameProfileDialog(initial: String, taken: Set<String>, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    val accent = accentColor
+    val palette = LocalPalette.current
+    var name by remember { mutableStateOf(initial) }
+    val clean = name.trim()
+    val ok = clean.isNotBlank() && clean !in taken
+    val shape = RoundedCornerShape(28.dp)
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(palette.bg.copy(alpha = 0.97f), shape)
+                .glass(shape, fill = 0.05f, border = 0.14f)
+                .padding(22.dp)
+        ) {
+            Text(Str.get(R.string.eq_rename_profile), style = MaterialTheme.typography.titleLarge, color = ink)
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                isError = clean in taken,
+                supportingText = if (clean in taken) ({ Text(Str.get(R.string.eq_name_taken)) }) else null,
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = accent,
+                    unfocusedBorderColor = ink.copy(alpha = 0.2f),
+                    focusedTextColor = ink, unfocusedTextColor = ink, cursorColor = accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    Str.get(R.string.cancel),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    color = ink,
+                    modifier = Modifier.weight(1f).pressable(onDismiss)
+                        .glass(RoundedCornerShape(50), fill = 0.08f, border = 0.16f).padding(vertical = 12.dp)
+                )
+                Text(
+                    Str.get(R.string.save),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    color = accent.onAccent(),
+                    modifier = Modifier.weight(1f)
+                        .pressable { if (ok) onConfirm(clean) }
+                        .background(accent.copy(alpha = if (ok) 1f else 0.4f), RoundedCornerShape(50))
+                        .padding(vertical = 12.dp)
+                )
+            }
+        }
     }
 }
 
@@ -830,7 +985,7 @@ private fun SaveProfileDialog(eq: EqualizerEngine, initial: String, onDismiss: (
     var name by remember { mutableStateOf(initial) }
     var picked by remember { mutableStateOf<com.melodia.app.audio.OutputDevice?>(null) }
     // Mientras el nombre sea el automático (o esté vacío), cambia con el dispositivo; si se edita, se respeta.
-    var auto by remember { mutableStateOf(initial.isBlank()) }
+    var auto by remember { mutableStateOf(true) }
     val shape = RoundedCornerShape(28.dp)
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -871,7 +1026,7 @@ private fun SaveProfileDialog(eq: EqualizerEngine, initial: String, onDismiss: (
                         .padding(vertical = 3.dp)
                         .pressable {
                             picked = d
-                            if (auto || name.isBlank()) { name = d?.name.orEmpty(); auto = true }
+                            if (auto || name.isBlank()) { name = d?.name?.let { eq.uniqueName(it) }.orEmpty(); auto = true }
                         }
                         .glass(RoundedCornerShape(16.dp), fill = if (sel) 0.16f else 0.06f, border = if (sel) 0.4f else 0.12f)
                         .padding(horizontal = 14.dp, vertical = 11.dp),

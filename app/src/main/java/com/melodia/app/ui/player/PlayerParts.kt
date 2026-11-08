@@ -478,24 +478,34 @@ private fun FxHoleButton(fxActive: Boolean, accent: Color, onToggle: () -> Unit,
                     awaitFirstDown(requireUnconsumed = false)
                     holding = true
                     armed = false
-                    // Un toque rápido no muestra nada: el aviso empieza tras un instante.
+                    var opened = false
+                    // Un toque rápido no muestra nada: el aviso empieza tras un instante. Si se sigue
+                    // presionando, en algo más de un segundo el anillo se completa y el menú se abre solo.
                     val charging = scope.launch {
                         kotlinx.coroutines.delay(130)
                         charge.snapTo(0f)
-                        charge.animateTo(1f, tween(480, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+                        charge.animateTo(1f, tween(900, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
                         armed = true
-                        // Un toque leve al estar listo (no una vibración larga).
+                        opened = true
+                        // Un toque leve al abrir (no una vibración larga).
                         haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        openCb()
+                        charge.animateTo(0f, tween(220))
+                        armed = false
                     }
                     val up = waitForUpOrCancellation()
-                    charging.cancel()
-                    val open = armed
                     holding = false
-                    armed = false
-                    scope.launch { charge.animateTo(0f, tween(180)) }
-                    if (up != null) {
-                        up.consume()
-                        if (open) openCb() else toggleCb()
+                    if (opened) {
+                        // El menú ya se abrió: soltar no hace nada más.
+                        up?.consume()
+                    } else {
+                        charging.cancel()
+                        armed = false
+                        scope.launch { charge.animateTo(0f, tween(180)) }
+                        if (up != null) {
+                            up.consume()
+                            toggleCb()
+                        }
                     }
                 }
             }
