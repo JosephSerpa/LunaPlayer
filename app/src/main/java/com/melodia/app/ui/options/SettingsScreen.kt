@@ -1,5 +1,6 @@
 package com.melodia.app.ui.options
 
+import androidx.compose.foundation.layout.height
 import com.melodia.app.Str
 import com.melodia.app.R
 
@@ -124,6 +125,14 @@ fun SettingsScreen(
                     Text(Str.get(R.string.split_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     androidx.compose.material3.Switch(checked = on, onCheckedChange = { ui.setSplit(if (it) 1 else 2) })
                 }
+                // Animaciones sutiles en los cuadros de Inicio (apagarlas ahorra batería).
+                val life by ui.homeLife.collectAsState()
+                androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(Str.get(R.string.home_life_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    com.melodia.app.ui.components.HelpBadge(Str.get(R.string.home_life_help))
+                    androidx.compose.material3.Switch(checked = life, onCheckedChange = { ui.setHomeLife(it) })
+                }
             }
         }
 
@@ -159,7 +168,7 @@ fun SettingsScreen(
         // --- Acerca de ---
         SettingsSectionLabel(Str.get(R.string.about))
         SettingsCard {
-            Text("Luna player 2.7.1", style = MaterialTheme.typography.titleMedium)
+            Text("Luna player 2.7.2", style = MaterialTheme.typography.titleMedium)
             Text(
                 Str.plural(R.plurals.about_phone_songs, library.songs.size - library.serverSongs) +
                         if (library.serverSongs > 0) Str.get(R.string.about_server_part, library.serverSongs) else "",

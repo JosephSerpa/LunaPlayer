@@ -1,5 +1,7 @@
 package com.melodia.app.ui.home
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.Canvas
@@ -348,7 +350,33 @@ object AlbumColors {
 /** Últimos álbumes del servidor y datos de Last.fm: se guardan un rato para no pedirlos en cada vistazo. */
 private object WidgetCache {
     var serverNew: Pair<Long, List<Long>>? = null
-    var lastfm: Pair<Long, LfmWidget>? = null
+
+    private var lastfm: Triple<String, Long, LfmWidget>? = null
+
+    private fun prefs(c: android.content.Context) = c.getSharedPreferences("widget_cache", android.content.Context.MODE_PRIVATE)
+
+    /** Datos de Last.fm guardados para este usuario (en memoria o en disco), o null. */
+    fun lastfmFor(c: android.content.Context, user: String?): LfmWidget? {
+        if (user == null) return null
+        lastfm?.let { if (it.first == user) return it.third }
+        val raw = prefs(c).getString("lastfm", null) ?: return null
+        val p = raw.split('\u0001')
+        if (p.size != 5 || p[0] != user) return null
+        val days = p[3].split(',').mapNotNull { it.toIntOrNull() }.toIntArray()
+        val w = LfmWidget(p[4], p[2].toIntOrNull() ?: 0, days)
+        lastfm = Triple(user, p[1].toLongOrNull() ?: 0L, w)
+        return w
+    }
+
+    fun lastfmAt(c: android.content.Context): Long = lastfm?.second ?: 0L
+
+    fun saveLastfm(c: android.content.Context, user: String, w: LfmWidget) {
+        val now = System.currentTimeMillis()
+        lastfm = Triple(user, now, w)
+        prefs(c).edit().putString(
+            "lastfm", listOf(user, now.toString(), w.plays.toString(), w.days.joinToString(","), w.artist).joinToString("\u0001")
+        ).apply()
+    }
 }
 
 private class LfmWidget(val artist: String, val plays: Int, val days: IntArray)
@@ -594,7 +622,8 @@ internal fun ShelfWidget(wd: WidgetData, tileH: Int, editing: Boolean, onAlbum: 
                         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                             val side = (maxHeight - 12.dp).coerceAtLeast(24.dp)
                             LazyRow(
-                                Modifier.fillMaxWidth().align(Alignment.BottomStart).padding(bottom = 8.dp),
+                                state = rememberDriftingRow(),
+                                modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart).padding(bottom = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 userScrollEnabled = !editing
                             ) {
@@ -694,7 +723,7 @@ internal fun MomentWidget(wd: WidgetData, editing: Boolean, onPlaySong: (List<So
             if (wd.momentSongs.isEmpty()) return@Column
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val side = min(maxHeight.value, 120f).dp.coerceAtLeast(28.dp)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = !editing) {
+                LazyRow(state = rememberDriftingRow(), horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = !editing) {
                     itemsIndexed(wd.momentSongs) { i, s ->
                         Box(Modifier.size(side).pressable { onPlaySong(wd.momentSongs, i) }) {
                             Artwork(s.artUri, side, cornerRadius = 12.dp, requestPx = WART)
@@ -818,7 +847,7 @@ internal fun TimelineWidget(wd: WidgetData, editing: Boolean, onPlaySong: (List<
                 val cardW = (cardH - 10.dp).coerceIn(48.dp, 200.dp)
                 // La línea del tiempo que une las décadas.
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 3.dp).height(2.dp).background(accent.copy(alpha = 0.4f)))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = !editing) {
+                LazyRow(state = rememberDriftingRow(), horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = !editing) {
                     itemsIndexed(wd.decades) { _, d ->
                         Box(Modifier.size(cardW, cardH).pressable { onPlaySong(d.songs.shuffled(), 0) }) {
                             Artwork(d.albums.first().artUri, cardW, cornerRadius = 12.dp, requestPx = WART)
@@ -995,7 +1024,7 @@ internal fun ServerNewWidget(library: LibraryState, wd: WidgetData, editing: Boo
             if (albums.isEmpty()) { Empty(Str.get(R.string.w_loading)); return@Column }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val side = maxHeight.coerceAtMost(160.dp)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = !editing) {
+                LazyRow(state = rememberDriftingRow(), horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = !editing) {
                     itemsIndexed(albums) { i, a ->
                         Box(Modifier.size(side).pressable { onAlbum(a.id) }) {
                             Artwork(a.artUri, side, cornerRadius = 12.dp, requestPx = WART)
@@ -1018,15 +1047,34 @@ internal fun LastFmWidget(wd: WidgetData, library: LibraryState, onArtist: (Stri
     val user by app.lastfm.user.collectAsStateWithLifecycle()
     val actions = LocalHomeActions.current
     val red = Color(0xFFE31B23)
-    val data by produceState(WidgetCache.lastfm?.second, user) {
+    val context = LocalContext.current
+    var failed by remember { mutableStateOf(false) }
+    var retry by remember { mutableStateOf(0) }
+    // Lo último que se vio se muestra al instante (aunque la app se haya cerrado) y se actualiza detrás.
+    val data by produceState(WidgetCache.lastfmFor(context, user), user, retry) {
         if (user == null) { value = null; return@produceState }
-        val cached = WidgetCache.lastfm
-        if (cached != null && System.currentTimeMillis() - cached.first < 30 * 60_000L) { value = cached.second; return@produceState }
-        val got = runCatching {
-            val top = app.lastfm.topArtists(LfmPeriod.MONTH, 1).firstOrNull()
-            LfmWidget(top?.title.orEmpty(), top?.plays ?: 0, app.lastfm.scrobblesPerDay(7))
-        }.getOrNull()
-        if (got != null) { WidgetCache.lastfm = System.currentTimeMillis() to got; value = got }
+        val cached = WidgetCache.lastfmFor(context, user)
+        if (cached != null) value = cached
+        if (cached != null && System.currentTimeMillis() - WidgetCache.lastfmAt(context) < 30 * 60_000L) return@produceState
+        failed = false
+        // Hasta 3 intentos, con una pausa creciente: Last.fm a veces tarda o responde con error.
+        for (attempt in 0 until 3) {
+            val got = runCatching {
+                coroutineScope {
+                    val top = async { app.lastfm.topArtists(LfmPeriod.MONTH, 1).firstOrNull() }
+                    val days = async { app.lastfm.scrobblesPerDay(7) }
+                    val t = top.await()
+                    LfmWidget(t?.title.orEmpty(), t?.plays ?: 0, days.await())
+                }
+            }.getOrNull()
+            if (got != null) {
+                WidgetCache.saveLastfm(context, user!!, got)
+                value = got
+                return@produceState
+            }
+            kotlinx.coroutines.delay(2_000L * (attempt + 1))
+        }
+        if (value == null) failed = true
     }
     Frame(Brush.linearGradient(listOf(Color(0xFF3A0B0E), Color(0xFF150708)))) {
         Column(Modifier.fillMaxSize().padding(10.dp)) {
@@ -1037,7 +1085,12 @@ internal fun LastFmWidget(wd: WidgetData, library: LibraryState, onArtist: (Stri
                 return@Column
             }
             val d = data
-            if (d == null) { Empty(Str.get(R.string.w_loading)); return@Column }
+            if (d == null) {
+                if (failed) {
+                    Box(Modifier.fillMaxSize().pressable { retry++ }, contentAlignment = Alignment.Center) { Hint(Str.get(R.string.w_lastfm_retry)) }
+                } else Empty(Str.get(R.string.w_loading))
+                return@Column
+            }
             val local = remember(d.artist, library.artists) { library.artists.firstOrNull { it.name.equals(d.artist, ignoreCase = true) } }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth > maxHeight * 1.2f

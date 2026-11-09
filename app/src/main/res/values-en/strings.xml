@@ -470,4 +470,7 @@
     <string name="eq_export_done">Profile exported</string>
     <string name="eq_export_failed">Could not export the profile</string>
     <string name="eq_name_taken">A profile with that name already exists</string>
+    <string name="w_lastfm_retry">Couldn\'t load. Tap to retry</string>
+    <string name="home_life_title">Home animations</string>
+    <string name="home_life_help">Now and then a Home tile makes a subtle move (a shine, a breath, a slight tilt) and the ones that scroll move forward by themselves. They never all move at once. Turn it off to save battery.</string>
 </resources>

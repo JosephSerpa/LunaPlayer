@@ -31,6 +31,17 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.7.2",
+        listOf(
+            "Last.fm en Inicio carga mucho más rápido, muestra al instante lo último que vio y reintenta solo si falla.",
+            "Inicio con vida: de vez en cuando un cuadro hace un movimiento sutil y los deslizables avanzan solos (se puede apagar en Ajustes)."
+        ),
+        listOf(
+            "Last.fm on Home loads much faster, shows the last data instantly and retries by itself if it fails.",
+            "A livelier Home: now and then a tile makes a subtle move and the scrollable ones advance by themselves (can be turned off in Settings)."
+        )
+    ),
+    Release(
         "2.7.1",
         listOf(
             "Perfiles del ecualizador: vista previa de la curva junto a cada uno.",

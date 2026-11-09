@@ -952,6 +952,8 @@ private fun HomeGrid(
                     )
                 }
             }
+            val lifePref by (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp)
+                .ui.homeLife.collectAsStateWithLifecycle()
             tiles.forEachIndexed { index, t ->
                 key(t.key) {
                     // El que se arrastra sigue al dedo desde su sitio; los demás muestran el reacomodo.
@@ -967,7 +969,12 @@ private fun HomeGrid(
                         onDragCancel = { hover = null },
                         onResize = onResize, onRemove = onRemove
                     ) {
-                        TileContent(t, data, wd, library, editing, onPlaySong, onAlbum, onArtist, onGenre, onOpenList)
+                        // Vida de Inicio: apagada mientras se edita o si el usuario la desactivó.
+                        androidx.compose.runtime.CompositionLocalProvider(LocalHomeLife provides (lifePref && !editing)) {
+                            Box(Modifier.fillMaxSize().tileLife(t.key, t.kind)) {
+                                TileContent(t, data, wd, library, editing, onPlaySong, onAlbum, onArtist, onGenre, onOpenList)
+                            }
+                        }
                     }
                 }
             }
@@ -1309,6 +1316,7 @@ private fun QuickPicksTile(
         }
         val pages = (songs.size + per - 1) / per
         val pager = rememberPagerState { pages }
+        DriftPager(pager)
         HorizontalPager(
             state = pager,
             modifier = Modifier.fillMaxSize(),

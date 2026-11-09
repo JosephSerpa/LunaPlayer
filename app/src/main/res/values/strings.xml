@@ -470,4 +470,7 @@
     <string name="eq_export_done">Perfil exportado</string>
     <string name="eq_export_failed">No se pudo exportar el perfil</string>
     <string name="eq_name_taken">Ya existe un perfil con ese nombre</string>
+    <string name="w_lastfm_retry">No se pudo cargar. Toca para reintentar</string>
+    <string name="home_life_title">Animaciones en Inicio</string>
+    <string name="home_life_help">De vez en cuando, un cuadro de Inicio hace un movimiento sutil (un brillo, una respiración, un leve giro) y los que se deslizan avanzan solos. Nunca se mueven todos a la vez. Apágalo para ahorrar batería.</string>
 </resources>

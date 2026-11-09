@@ -1,5 +1,9 @@
 package com.melodia.app.data.lastfm
 
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import android.content.Context
 import android.net.Uri
 import com.melodia.app.BuildConfig
@@ -292,29 +296,37 @@ class LastFm(context: Context, private val favorites: FavoritesStore) {
             )
         }
 
-    /** Escuchas por día de los últimos [days] días (el último es hoy). */
-    suspend fun scrobblesPerDay(days: Int = 7): IntArray {
-        val counts = IntArray(days)
-        val tz = java.util.TimeZone.getDefault()
-        fun dayOf(ms: Long) = (ms + tz.getOffset(ms)) / 86_400_000L
-        val today = dayOf(System.currentTimeMillis())
-        val from = (System.currentTimeMillis() - days * 86_400_000L) / 1000
-        var page = 1
-        while (page <= 5) {
-            val root = call(
-                "user.getRecentTracks",
-                mapOf("user" to (_user.value ?: ""), "limit" to "200", "from" to from.toString(), "page" to page.toString())
-            ).optJSONObject("recenttracks")
-            for (t in list(root, "track")) {
-                val ms = t.optJSONObject("date")?.optString("uts")?.toLongOrNull()?.times(1000) ?: continue
-                val i = days - 1 - (today - dayOf(ms)).toInt()
-                if (i in 0 until days) counts[i]++
-            }
-            val total = root?.optJSONObject("@attr")?.optString("totalPages")?.toIntOrNull() ?: 1
-            if (page >= total) break
-            page++
+    /**
+     * Escuchas por día de los últimos [days] días (el último es hoy).
+     *
+     * En vez de bajar todas las escuchas de la semana (varias páginas grandes, una tras otra), se pide
+     * a Last.fm solo el total de cada día (una consulta mínima por día, varias a la vez).
+     */
+    suspend fun scrobblesPerDay(days: Int = 7): IntArray = coroutineScope {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+        val starts = LongArray(days + 1)
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -(days - 1))
+        for (i in 0..days) {
+            starts[i] = cal.timeInMillis / 1000
+            cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
         }
-        return counts
+        val gate = kotlinx.coroutines.sync.Semaphore(4) // Last.fm pide no más de unas pocas a la vez
+        (0 until days).map { i ->
+            async {
+                gate.withPermit {
+                    val root = call(
+                        "user.getRecentTracks",
+                        mapOf(
+                            "user" to (_user.value ?: ""), "limit" to "1",
+                            "from" to starts[i].toString(), "to" to (starts[i + 1] - 1).toString()
+                        )
+                    ).optJSONObject("recenttracks")
+                    root?.optJSONObject("@attr")?.optString("total")?.toIntOrNull() ?: 0
+                }
+            }
+        }.awaitAll().toIntArray()
     }
 
     suspend fun loved(limit: Int = 50): List<LfmItem> =
