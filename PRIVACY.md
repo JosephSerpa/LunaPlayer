@@ -1,6 +1,6 @@
 # Política de privacidad · Privacy policy — Luna player
 
-*Última actualización / Last updated: 18 de octubre de 2026*
+*Última actualización / Last updated: 11 de noviembre de 2026*
 
 ## Español
 
@@ -15,7 +15,9 @@
 
 **Servidor opcional (Subsonic / Navidrome / similares).** Si tú configuras un servidor, la app se conecta **solo a ese servidor** para listar y reproducir tu música. Los datos de conexión (dirección, usuario y una clave cifrada de acceso, no tu contraseña) se guardan únicamente en tu teléfono. Lo que ocurra en ese servidor depende de quien lo administra, no de nosotros.
 
-**Permisos:** audio (leer música), notificaciones (controles de reproducción), servicio en primer plano y mantener activo el dispositivo (seguir sonando con la pantalla apagada), Internet y estado de red (solo para tu servidor opcional).
+**Last.fm (opcional).** Si tú conectas tu cuenta de Last.fm, la app envía directamente a Last.fm el título, artista, álbum y duración de las canciones que escuchas ("scrobbles"), la canción que suena ahora y tus "me gusta", y descarga tus estadísticas para mostrarlas en Inicio. Tu contraseña no se guarda: solo la clave de sesión que entrega Last.fm, y únicamente en tu teléfono. Puedes desconectarte cuando quieras en Ajustes. Last.fm tiene su propia política de privacidad: https://www.last.fm/legal/privacy
+
+**Permisos:** audio (leer música), notificaciones (controles de reproducción), servicio en primer plano y mantener activo el dispositivo (seguir sonando con la pantalla apagada), Internet y estado de red (solo para tu servidor y Last.fm, ambos opcionales).
 
 **Enlaces externos.** El botón de Ko-fi abre una página en tu navegador. Esa página tiene su propia política de privacidad.
 
@@ -42,7 +44,9 @@
 
 **Optional server (Subsonic / Navidrome / similar).** If you set up a server, the app connects **only to that server** to list and play your music. Connection details (address, user name and an encrypted access token, not your password) are stored only on your phone. What happens on that server depends on whoever runs it, not on us.
 
-**Permissions:** audio (read music), notifications (playback controls), foreground service and wake lock (keep playing with the screen off), Internet and network state (only for your optional server).
+**Last.fm (optional).** If you connect your Last.fm account, the app sends the title, artist, album and length of the songs you listen to ("scrobbles"), the song playing now and your likes directly to Last.fm, and downloads your statistics to show them on Home. Your password is not stored: only the session key Last.fm returns, and only on your phone. You can disconnect at any time in Settings. Last.fm has its own privacy policy: https://www.last.fm/legal/privacy
+
+**Permissions:** audio (read music), notifications (playback controls), foreground service and wake lock (keep playing with the screen off), Internet and network state (only for your optional server and Last.fm).
 
 **External links.** The Ko-fi button opens a page in your browser. That page has its own privacy policy.
 
