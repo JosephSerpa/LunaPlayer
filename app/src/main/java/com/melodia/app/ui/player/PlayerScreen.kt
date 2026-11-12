@@ -1201,8 +1201,12 @@ private fun PlayerLayout(
         val tlYP = ctlYP - g2 - hTl
         val infoYP = tlYP - g1 - hInfo
         val topYP = insetT.toFloat()
-        val areaTopP = topYP + hTop + coverPad
-        val areaHP = (infoYP - coverPad - areaTopP).coerceAtLeast(1f)
+        // Pantallas bajas (compact): la carátula puede crecer un poco por detrás de la barra de arriba y del
+        // título (sus bordes se funden con el fondo). En celulares altos, compact es falso y no cambia nada.
+        val ovTop = if (compact) hTop * 0.55f else 0f
+        val ovBot = if (compact) 18.dp.toPx() else 0f
+        val areaTopP = topYP + hTop + coverPad - ovTop
+        val areaHP = (infoYP + ovBot - coverPad - areaTopP).coerceAtLeast(1f)
         val sideP = minOf(wP, areaHP)
 
         // --- Horizontal: lo de la derecha, centrado en el alto que deja la barra superior ---
