@@ -1176,7 +1176,10 @@ private fun PlayerLayout(
         val wL = (w - insetR - padX - xL).coerceAtLeast(1f)
         // Escala del panel derecho según el alto disponible (celulares bajos lo reducen un poco).
         val sL = (availH / 380.dp.toPx()).coerceIn(0.6f, 1f)
-        val sc = lerpF(1f, sL)
+        // Vertical en pantallas bajas (DAP de 720p): controles algo más pequeños para dejar la carátula grande.
+        // Con 640 dp útiles o más (cualquier celular normal) vale 1 y no cambia nada.
+        val sP = (availH / 640.dp.toPx()).coerceIn(0.82f, 1f)
+        val sc = lerpF(sP, sL)
         val pw = lerpF(wP, wL)
         val px = lerpF(xP, xL)
         val mw = (pw / sc).roundToInt().coerceAtLeast(1)
@@ -1224,7 +1227,7 @@ private fun PlayerLayout(
         val pencil = ms[5].measure(
             if (hasPencil) Constraints.fixed(btn.roundToInt(), btn.roundToInt()) else Constraints.fixed(0, 0)
         )
-        val penXP = (w - insetR - padX) - btn
+        val penXP = (w - insetR - padX) - btn * sP
         val penYP = topYP + hTop + gap8
         val penXL = xL + wL - (btn * 3f + gap8 * 2f) * sc
         val penYL = topYL + 8.dp.toPx() * sc
