@@ -76,6 +76,32 @@ fun SettingsScreen(
             onClick = onOpenEqualizer
         )
 
+        run {
+            val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp
+            val dapOn by app.dap.enabled.collectAsState()
+            SettingsCard {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                        Text(Str.get(R.string.dap_title), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            Str.get(if (dapOn) R.string.dap_sub_on else R.string.dap_sub_off),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    com.melodia.app.ui.components.HelpBadge(Str.get(R.string.dap_help))
+                    androidx.compose.material3.Switch(
+                        checked = dapOn,
+                        onCheckedChange = { on ->
+                            // El ecualizador global del sistema también se apaga: con el modo DAP la app no toca el audio.
+                            if (on) app.equalizer.setGlobal(false)
+                            app.dap.set(on)
+                        }
+                    )
+                }
+            }
+        }
+
         // --- Fuentes de música ---
         SettingsSectionLabel(Str.get(R.string.music_sources))
         SettingsLink(
@@ -168,7 +194,7 @@ fun SettingsScreen(
         // --- Acerca de ---
         SettingsSectionLabel(Str.get(R.string.about))
         SettingsCard {
-            Text("Luna player 2.7.2", style = MaterialTheme.typography.titleMedium)
+            Text("Luna player 2.8.0", style = MaterialTheme.typography.titleMedium)
             Text(
                 Str.plural(R.plurals.about_phone_songs, library.songs.size - library.serverSongs) +
                         if (library.serverSongs > 0) Str.get(R.string.about_server_part, library.serverSongs) else "",

@@ -31,6 +31,21 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.8.0",
+        listOf(
+            "Modo DAP (bit-perfect) en Ajustes: apaga los efectos propios para que el audio salga sin procesar hacia el DAC.",
+            "Pensado para DAPs: los efectos apagados ya no pasan por la cadena de audio y, si alguno falla, la música sigue sin él.",
+            "Menos batería y calor: con la pantalla apagada se detienen las animaciones y los gestos de Inicio.",
+            "Botones físicos de reproducción: despiertan la música incluso con la app cerrada."
+        ),
+        listOf(
+            "DAP mode (bit-perfect) in Settings: turns off the app's own effects so audio goes out unprocessed to the DAC.",
+            "Made for DAPs: idle effects no longer sit in the audio chain and, if one fails, the music keeps playing without it.",
+            "Less battery and heat: with the screen off, animations and Home gestures stop.",
+            "Physical playback buttons: they wake the music even with the app closed."
+        )
+    ),
+    Release(
         "2.7.2",
         listOf(
             "Last.fm en Inicio carga mucho más rápido, muestra al instante lo último que vio y reintenta solo si falla.",

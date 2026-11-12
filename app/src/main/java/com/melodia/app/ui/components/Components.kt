@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -447,4 +448,22 @@ private class AbovePositionProvider(private val gap: Int) : PopupPositionProvide
         if (y < 0) y = anchorBounds.bottom + gap
         return IntOffset(x, y)
     }
+}
+
+
+/** Aviso cuando el modo DAP está encendido: los efectos propios están en pausa. */
+@androidx.compose.runtime.Composable
+fun DapNotice(modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp
+    val on by app.dap.enabled.collectAsState()
+    if (!on) return
+    androidx.compose.material3.Text(
+        com.melodia.app.Str.get(com.melodia.app.R.string.dap_notice),
+        style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+        color = com.melodia.app.ui.theme.ink.copy(alpha = 0.75f),
+        modifier = modifier
+            .fillMaxWidth()
+            .background(com.melodia.app.ui.theme.ink.copy(alpha = 0.08f), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .padding(12.dp)
+    )
 }

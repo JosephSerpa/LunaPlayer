@@ -107,6 +107,7 @@ fun FxPanel(
             PanelCloseButton(onClose)
         }
 
+        com.melodia.app.ui.components.DapNotice(Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(14.dp))
 
         // Mis ajustes: solo los que el usuario guarda. Tocar aplica; mantener presionado borra.

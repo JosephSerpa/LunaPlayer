@@ -879,7 +879,8 @@ private fun HomeGrid(
     // Temblor del modo edición: un solo reloj para todos; cada cuadro con su propio desfase.
     // Solo existe mientras se edita: fuera de ese modo la pantalla no dibuja cuadros de más.
     val still = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val phase: androidx.compose.runtime.State<Float> = if (editing) {
+    val foreground = com.melodia.app.ui.rememberIsForeground()
+    val phase: androidx.compose.runtime.State<Float> = if (editing && foreground) {
         val wiggle = rememberInfiniteTransition(label = "wiggle")
         wiggle.animateFloat(
             0f, 1f, infiniteRepeatable(tween(560, easing = LinearEasing)), label = "wigglePhase"

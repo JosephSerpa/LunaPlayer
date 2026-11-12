@@ -438,6 +438,7 @@ fun EqualizerScreen(
 
         // Ecualizador global: al final de todo.
         Spacer(Modifier.height(16.dp))
+        com.melodia.app.ui.components.DapNotice(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp))
         Column(
             Modifier
                 .padding(horizontal = 16.dp)
@@ -927,6 +928,7 @@ private fun FilterTypePicker(selected: FilterType, onSelect: (FilterType) -> Uni
 private fun GlobalEqRow(eq: EqualizerEngine) {
     val accent = accentColor
     val on by eq.global.collectAsState()
+    val dapOn by (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp).dap.enabled.collectAsState()
     var warn by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     Row(
@@ -940,6 +942,7 @@ private fun GlobalEqRow(eq: EqualizerEngine) {
         HelpBadge(Str.get(R.string.eq_global_help), Modifier.padding(horizontal = 6.dp))
         Switch(
             checked = on,
+            enabled = !dapOn,
             onCheckedChange = { want ->
                 if (want) warn = true else eq.setGlobal(false)
             },

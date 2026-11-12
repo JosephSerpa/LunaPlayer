@@ -473,4 +473,9 @@
     <string name="w_lastfm_retry">No se pudo cargar. Toca para reintentar</string>
     <string name="home_life_title">Animaciones en Inicio</string>
     <string name="home_life_help">De vez en cuando, un cuadro de Inicio hace un movimiento sutil (un brillo, una respiración, un leve giro) y los que se deslizan avanzan solos. Nunca se mueven todos a la vez. Apágalo para ahorrar batería.</string>
+    <string name="dap_title">Modo DAP (bit-perfect)</string>
+    <string name="dap_help">Apaga todos los efectos propios de la app: ecualizador, Slow + Reverb y ecualizador global. El audio sale tal cual lo decodifica el reproductor hacia el DAC o la salida balanceada de tu dispositivo, sin pasar por el procesamiento de Luna player. Al cambiarlo, la canción se vuelve a cargar en el mismo punto (puede haber un corte breve).</string>
+    <string name="dap_sub_on">Activo: el audio sale sin procesar</string>
+    <string name="dap_sub_off">Apagado: efectos disponibles</string>
+    <string name="dap_notice">Modo DAP activo: este efecto está en pausa. Apágalo en Ajustes → Sonido.</string>
 </resources>

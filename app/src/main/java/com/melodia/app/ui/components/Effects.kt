@@ -311,7 +311,8 @@ fun EqualizerBars(
 ) {
     val level by animateFloatAsState(if (active) 1f else 0f, tween(300), label = "eqLevel")
     // En pausa (ya bajadas) las barras quedan quietas: no se redibujan 60 veces por segundo.
-    val animating = active || level > 0.001f
+    val foreground = com.melodia.app.ui.rememberIsForeground()
+    val animating = (active || level > 0.001f) && foreground
     val values: List<androidx.compose.runtime.State<Float>> = if (animating) {
         val t = rememberInfiniteTransition(label = "eq")
         val durations = listOf(520, 700, 610, 480, 760, 560)

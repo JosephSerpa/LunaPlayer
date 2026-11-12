@@ -133,10 +133,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        com.melodia.app.ui.AppVisibility.foreground = true
         (application as MelodiaApp).playerController.setUiVisible(true)
     }
 
     override fun onStop() {
+        com.melodia.app.ui.AppVisibility.foreground = false
         (application as MelodiaApp).playerController.setUiVisible(false)
         super.onStop()
     }

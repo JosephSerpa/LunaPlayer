@@ -3,7 +3,6 @@ package com.melodia.app.audio
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import kotlin.math.PI
@@ -19,7 +18,7 @@ import kotlin.math.sin
  * [amount]: 0 = sin cambio, 1 = máximo.
  */
 @OptIn(UnstableApi::class)
-class VocalRemoverAudioProcessor : BaseAudioProcessor() {
+class VocalRemoverAudioProcessor : SafeAudioProcessor() {
 
     @Volatile private var enabled = false
     @Volatile private var amount = 0.8f
@@ -41,6 +40,9 @@ class VocalRemoverAudioProcessor : BaseAudioProcessor() {
 
     @Throws(AudioProcessor.UnhandledAudioFormatException::class)
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        resetFailure()
+        // Modo DAP: el procesador sale de la cadena y el audio pasa sin tocar.
+        if (DapMode.active) return AudioProcessor.AudioFormat.NOT_SET
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
@@ -66,7 +68,7 @@ class VocalRemoverAudioProcessor : BaseAudioProcessor() {
         hpState.fill(0.0); lpState.fill(0.0)
     }
 
-    override fun queueInput(inputBuffer: ByteBuffer) {
+    override fun process(inputBuffer: ByteBuffer) {
         val size = inputBuffer.remaining()
         if (size == 0) return
         val output = replaceOutputBuffer(size)

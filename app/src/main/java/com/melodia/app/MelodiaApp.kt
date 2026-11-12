@@ -19,6 +19,8 @@ class MelodiaApp : Application(), ImageLoaderFactory {
         Str.init(LocaleManager.wrap(this))
         // Credenciales del servidor listas antes de la primera carátula o canción (widget, servicio…).
         serverSettings.config.value
+        // Modo DAP listo antes de que el servicio arme la cadena de audio.
+        dap.enabled.value
     }
 
     val repository: MusicRepository by lazy { MusicRepository(contentResolver) }
@@ -34,6 +36,9 @@ class MelodiaApp : Application(), ImageLoaderFactory {
 
     /** Last.fm: scrobbles, me gusta → Loved y estadísticas. */
     val lastfm: com.melodia.app.data.lastfm.LastFm by lazy { com.melodia.app.data.lastfm.LastFm(this, favorites) }
+
+    /** Modo DAP / bit-perfect: la app no toca el audio. */
+    val dap: com.melodia.app.audio.DapMode by lazy { com.melodia.app.audio.DapMode(this) }
 
     /** Slow + reverb + tono. */
     val effects: EffectsEngine by lazy { EffectsEngine(this) }

@@ -1001,7 +1001,8 @@ private fun SpectrumSeekBar(
     // Mientras se analiza, una ola suave recorre las barras (cuando ya está completo, se detiene).
     val waiting = !ready || spectrum?.complete != true
     val still = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val phaseState: androidx.compose.runtime.State<Float> = if (waiting) {
+    val foreground = com.melodia.app.ui.rememberIsForeground()
+    val phaseState: androidx.compose.runtime.State<Float> = if (waiting && foreground) {
         val wave = rememberInfiniteTransition(label = "specWait")
         wave.animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "specPhase")
     } else still

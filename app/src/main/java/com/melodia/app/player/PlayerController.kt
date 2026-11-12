@@ -175,13 +175,24 @@ class PlayerController(context: Context) {
     init {
         // Velocidad y tono (slow) se aplican al reproductor cada vez que cambian.
         val effects = (appContext as MelodiaApp).effects
+        val dap = (appContext as MelodiaApp).dap
         scope.launch {
-            effects.settings
-                .map { it.effSpeed to it.pitchFactor }
+            // En modo DAP la velocidad y el tono quedan en 1× / 0 st: nada pasa por el procesador de tempo.
+            kotlinx.coroutines.flow.combine(effects.settings, dap.enabled) { fx, on ->
+                if (on) 1f to 1f else fx.effSpeed to fx.pitchFactor
+            }
                 .distinctUntilChanged()
                 .collect { (speed, pitch) ->
                     withController { it.playbackParameters = PlaybackParameters(speed, pitch) }
                 }
+        }
+        scope.launch {
+            // Al encender o apagar el modo DAP se vuelve a armar la ruta de audio (misma canción y posición).
+            var first = true
+            dap.enabled.collect {
+                if (first) { first = false; return@collect }
+                reapplyAudioPath()
+            }
         }
         val token = SessionToken(
             appContext, ComponentName(appContext, PlaybackService::class.java)
@@ -199,6 +210,24 @@ class PlayerController(context: Context) {
             pending.forEach { it(c) }
             pending.clear()
         }, MoreExecutors.directExecutor())
+    }
+
+    /**
+     * Vuelve a armar la ruta de audio (por ejemplo al cambiar el modo DAP): recarga la cola en la misma
+     * canción y posición, sin cambiar si estaba sonando o en pausa. Puede notarse un corte breve.
+     */
+    private fun reapplyAudioPath() = withController { c ->
+        runCatching {
+            val n = c.mediaItemCount
+            if (n == 0) return@runCatching
+            val index = c.currentMediaItemIndex
+            val position = c.currentPosition.coerceAtLeast(0L)
+            val items = List(n) { c.getMediaItemAt(it) }
+            val play = c.playWhenReady
+            c.setMediaItems(items, index, position)
+            c.prepare()
+            c.playWhenReady = play
+        }
     }
 
     private fun withController(block: (MediaController) -> Unit) {

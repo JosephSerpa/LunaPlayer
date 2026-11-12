@@ -3,7 +3,6 @@ package com.melodia.app.audio
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import kotlin.math.abs
@@ -15,7 +14,7 @@ import kotlin.math.tanh
  * y 4 pasa-todo en serie por canal). Si la mezcla es 0 deja pasar el audio intacto.
  */
 @OptIn(UnstableApi::class)
-class ReverbAudioProcessor : BaseAudioProcessor() {
+class ReverbAudioProcessor : SafeAudioProcessor() {
 
     @Volatile private var mix = 0f
     @Volatile private var room = 0.6f
@@ -24,6 +23,7 @@ class ReverbAudioProcessor : BaseAudioProcessor() {
     private var channels = 0
     private var encoding = C.ENCODING_INVALID
     private var active = false
+    private var frame = FloatArray(0)
 
     private var combL = emptyArray<Comb>()
     private var combR = emptyArray<Comb>()
@@ -38,6 +38,9 @@ class ReverbAudioProcessor : BaseAudioProcessor() {
 
     @Throws(AudioProcessor.UnhandledAudioFormatException::class)
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        resetFailure()
+        // Modo DAP: el procesador sale de la cadena y el audio pasa sin tocar.
+        if (DapMode.active) return AudioProcessor.AudioFormat.NOT_SET
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
@@ -67,7 +70,7 @@ class ReverbAudioProcessor : BaseAudioProcessor() {
         apL.forEach { it.clear() }; apR.forEach { it.clear() }
     }
 
-    override fun queueInput(inputBuffer: ByteBuffer) {
+    override fun process(inputBuffer: ByteBuffer) {
         val size = inputBuffer.remaining()
         if (size == 0) return
         val output = replaceOutputBuffer(size)
@@ -89,7 +92,7 @@ class ReverbAudioProcessor : BaseAudioProcessor() {
         val wet = 1.4f * m
         val pcm16 = encoding == C.ENCODING_PCM_16BIT
         val bytes = if (pcm16) 2 else 4
-        val frame = FloatArray(channels)
+        if (frame.size != channels) frame = FloatArray(channels)
 
         while (inputBuffer.remaining() >= bytes * channels) {
             for (c in 0 until channels) {

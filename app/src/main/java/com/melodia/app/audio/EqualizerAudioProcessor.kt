@@ -3,7 +3,6 @@ package com.melodia.app.audio
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import java.util.Arrays
@@ -18,7 +17,7 @@ import kotlin.math.tanh
  * (campana, tonos, pasos, muesca) con frecuencia, ganancia (±20 dB) y Q propios.
  */
 @OptIn(UnstableApi::class)
-class EqualizerAudioProcessor : BaseAudioProcessor() {
+class EqualizerAudioProcessor : SafeAudioProcessor() {
 
     @Volatile private var settings = EqSettings()
     @Volatile private var version = 0
@@ -44,6 +43,9 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
 
     @Throws(AudioProcessor.UnhandledAudioFormatException::class)
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        resetFailure()
+        // Modo DAP: el procesador sale de la cadena y el audio pasa sin tocar.
+        if (DapMode.active) return AudioProcessor.AudioFormat.NOT_SET
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
@@ -69,7 +71,7 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
         channels = 0
     }
 
-    override fun queueInput(inputBuffer: ByteBuffer) {
+    override fun process(inputBuffer: ByteBuffer) {
         val size = inputBuffer.remaining()
         if (size == 0) return
         val output = replaceOutputBuffer(size)

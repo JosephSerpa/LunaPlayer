@@ -47,6 +47,7 @@ class EqualizerEngine(private val context: Context) {
     /** Activa o desactiva el modo global. Devuelve falso si este dispositivo no lo permite. */
     fun setGlobal(on: Boolean): Boolean {
         if (on) {
+            if (DapMode.active) return false
             if (!globalEq.start(_settings.value)) return false
             runCatching {
                 context.startForegroundService(android.content.Intent(context, GlobalEqService::class.java))
@@ -66,8 +67,9 @@ class EqualizerEngine(private val context: Context) {
 
     init {
         processor.setSettings(_settings.value)
+        // Con el modo DAP encendido no se engancha el ecualizador global (la app no toca el audio).
         // Si estaba activado la última vez, se vuelve a enganchar al arrancar.
-        if (prefs.getBoolean(KEY_GLOBAL, false)) setGlobal(true)
+        if (prefs.getBoolean(KEY_GLOBAL, false) && !DapMode.active) setGlobal(true)
     }
 
     private fun update(transform: (EqSettings) -> EqSettings) {

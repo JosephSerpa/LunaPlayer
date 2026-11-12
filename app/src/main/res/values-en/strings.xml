@@ -473,4 +473,9 @@
     <string name="w_lastfm_retry">Couldn\'t load. Tap to retry</string>
     <string name="home_life_title">Home animations</string>
     <string name="home_life_help">Now and then a Home tile makes a subtle move (a shine, a breath, a slight tilt) and the ones that scroll move forward by themselves. They never all move at once. Turn it off to save battery.</string>
+    <string name="dap_title">DAP mode (bit-perfect)</string>
+    <string name="dap_help">Turns off all of the app\'s own effects: equalizer, Slow + Reverb and the global equalizer. Audio goes out exactly as the player decodes it, to your device\'s DAC or balanced output, without passing through Luna player processing. When you change it, the song reloads at the same point (there may be a brief gap).</string>
+    <string name="dap_sub_on">On: audio goes out unprocessed</string>
+    <string name="dap_sub_off">Off: effects available</string>
+    <string name="dap_notice">DAP mode is on: this effect is paused. Turn it off in Settings → Sound.</string>
 </resources>

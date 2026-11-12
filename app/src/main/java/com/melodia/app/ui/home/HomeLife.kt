@@ -45,6 +45,8 @@ private object HomeLife {
     /** Solo un gesto cada pocos segundos en toda la pantalla. */
     @Synchronized
     fun claim(gapMs: Long = 6_000L): Boolean {
+        // Con la app en segundo plano o la pantalla apagada no se inicia ningún gesto.
+        if (!com.melodia.app.ui.AppVisibility.foreground) return false
         val now = System.currentTimeMillis()
         if (now - lastAt < gapMs) return false
         lastAt = now

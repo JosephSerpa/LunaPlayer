@@ -50,8 +50,9 @@ class PlaybackService : MediaSessionService() {
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .setAudioProcessors(
-                        // Orden: quitar voz → ecualizador → reverberación.
-                        arrayOf<AudioProcessor>(effects.vocal, equalizer.processor, effects.reverb)
+                        // Orden: ecualizador → reverberación. (La función "off vocal" se quitó de la app:
+                        // su procesador ya no va en la cadena.) Con el modo DAP encendido ambos se apartan.
+                        arrayOf<AudioProcessor>(equalizer.processor, effects.reverb)
                     )
                     .build()
         }
