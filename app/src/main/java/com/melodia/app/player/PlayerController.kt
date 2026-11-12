@@ -534,21 +534,24 @@ class PlayerController(context: Context) {
      */
     fun play(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false) {
         if (songs.isEmpty()) return
-        val queue: List<Song>
-        val index: Int
+        fillJob?.cancel()
+        val all: List<Song>
+        val start: Int
         if (shuffle) {
-            val pool = if (songs.size > MAX_QUEUE) songs.shuffled().take(MAX_QUEUE) else songs
-            val first = pool.random()
-            queue = listOf(first) + pool.filter { it !== first }.shuffled()
-            index = 0
-            originalIds = pool.map { it.id.toString() }
+            val first = songs.random()
+            all = listOf(first) + songs.filter { it !== first }.shuffled()
+            start = 0
+            originalIds = songs.map { it.id.toString() }
         } else {
-            // Con bibliotecas enormes no se manda toda la lista al reproductor (4 000+ canciones
-            // tardan y hacen que la app se trabe al elegir una): se usa una ventana alrededor de la elegida.
-            val (q, i) = limitQueue(songs, startIndex.coerceIn(0, songs.lastIndex))
-            queue = q; index = i
+            all = songs
+            start = startIndex.coerceIn(0, songs.lastIndex)
             originalIds = null
         }
+        // Con bibliotecas enormes no se manda toda la lista de golpe (4 000+ canciones tardan y traban
+        // la app): se carga ya una ventana alrededor de la elegida y el resto se completa solo después.
+        val sp = splitQueue(all, start)
+        val queue = sp.window
+        val index = sp.index
         shuffleOn.value = shuffle
         // Modo luna: la canción elegida también empieza en su mejor parte.
         val startMs = favorites.moonStartMs(queue[index].id) ?: 0L
@@ -558,10 +561,11 @@ class PlayerController(context: Context) {
             c.prepare()
             c.play()
         }
+        fillRest(sp)
         session.edit()
-            .putString(KEY_QUEUE, queue.joinToString(",") { it.id.toString() })
+            .putString(KEY_QUEUE, all.joinToString(",") { it.id.toString() })
             .putString(KEY_ORIGINAL, originalIds?.joinToString(","))
-            .putInt(KEY_INDEX, index)
+            .putInt(KEY_INDEX, sp.head.size + index)
             .putLong(KEY_POSITION, startMs)
             .putBoolean(KEY_SHUFFLE, shuffle)
             .apply()
@@ -573,6 +577,7 @@ class PlayerController(context: Context) {
      */
     fun playClips(clips: List<Pair<Song, Long>>, lengthMs: Long = 30_000L) {
         if (clips.isEmpty()) return
+        fillJob?.cancel()
         val items = clips.take(MAX_QUEUE).map { (song, start) ->
             val base = song.toMediaItem()
             val extras = Bundle(base.mediaMetadata.extras ?: Bundle()).apply { putBoolean(EXTRA_CLIP, true) }
@@ -652,11 +657,46 @@ class PlayerController(context: Context) {
             .apply()
     }
 
-    private fun limitQueue(songs: List<Song>, startIndex: Int): Pair<List<Song>, Int> {
-        if (songs.size <= MAX_QUEUE) return songs to startIndex
+    /** Cola partida: [window] se carga ya (con [index] dentro de ella); [head] y [tail] se añaden después. */
+    private class QueueSplit(val head: List<Song>, val window: List<Song>, val tail: List<Song>, val index: Int)
+
+    private fun splitQueue(songs: List<Song>, startIndex: Int): QueueSplit {
+        if (songs.size <= MAX_QUEUE) return QueueSplit(emptyList(), songs, emptyList(), startIndex)
         val from = (startIndex - MAX_QUEUE / 4).coerceAtLeast(0)
         val to = (from + MAX_QUEUE).coerceAtMost(songs.size)
-        return songs.subList(from, to) to (startIndex - from)
+        return QueueSplit(songs.subList(0, from), songs.subList(from, to), songs.subList(to, songs.size), startIndex - from)
+    }
+
+    private var fillJob: Job? = null
+
+    /**
+     * Completa la cola en segundo plano, en bloques pequeños y con pausas: primero lo que va después de la
+     * ventana y luego lo que iba antes. Empieza tras un par de segundos para que la canción arranque primero.
+     * Si se elige otra cosa mientras tanto, [play] lo cancela.
+     */
+    private fun fillRest(sp: QueueSplit) {
+        fillJob?.cancel()
+        if (sp.head.isEmpty() && sp.tail.isEmpty()) return
+        fillJob = scope.launch {
+            delay(2_000)
+            var i = 0
+            while (i < sp.tail.size) {
+                val end = minOf(i + FILL_CHUNK, sp.tail.size)
+                val chunk = sp.tail.subList(i, end).map { it.toMediaItem() }
+                withController { it.addMediaItems(chunk) }
+                i = end
+                delay(250)
+            }
+            var j = sp.head.size
+            while (j > 0) {
+                val st = maxOf(j - FILL_CHUNK, 0)
+                val chunk = sp.head.subList(st, j).map { it.toMediaItem() }
+                withController { it.addMediaItems(0, chunk) }
+                j = st
+                delay(250)
+            }
+            withController { saveQueue(it) }
+        }
     }
 
     /**
@@ -679,8 +719,10 @@ class PlayerController(context: Context) {
             if (c.mediaItemCount > 0) return@withController
             c.shuffleModeEnabled = false
             shuffleOn.value = shuffle
-            c.setMediaItems(queue.map { it.toMediaItem() }, index, position)
+            val sp = splitQueue(queue, index)
+            c.setMediaItems(sp.window.map { it.toMediaItem() }, sp.index, position)
             c.prepare()
+            fillRest(sp)
             _position.value = position
         }
     }
@@ -809,6 +851,8 @@ class PlayerController(context: Context) {
         const val EXTRA_CLIP = "melodia.clip"
         /** Máximo de canciones que se cargan en la cola a la vez. */
         const val MAX_QUEUE = 400
+        /** Tamaño de cada bloque al completar la cola en segundo plano. */
+        const val FILL_CHUNK = 300
         const val KEY_QUEUE = "queue"
         const val KEY_INDEX = "index"
         const val KEY_POSITION = "position"
