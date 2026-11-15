@@ -26,20 +26,42 @@ class GlobalEqService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_REPOST &&
+            !(application as com.melodia.app.MelodiaApp).equalizer.global.value
+        ) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        // ACTION_REPOST llega cuando el usuario desliza la notificación (Android 14+ lo permite aunque
+        // sea "ongoing"): mientras el ecualizador siga activo, la notificación vuelve a aparecer.
+        // Solo se quita con la X, que además apaga el ecualizador.
         val nm = getSystemService(NotificationManager::class.java)
+        // El canal antiguo era de importancia mínima (sin ícono en la barra); un canal no puede subir
+        // de importancia, así que se usa uno nuevo y se borra el viejo.
+        runCatching { nm.deleteNotificationChannel(OLD_CHANNEL) }
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, Str.get(R.string.eq_global_title), NotificationManager.IMPORTANCE_MIN)
+            NotificationChannel(CHANNEL, Str.get(R.string.eq_global_title), NotificationManager.IMPORTANCE_LOW)
+                .apply { setShowBadge(false) }
         )
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val n = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notif_eq)
             .setContentTitle(Str.get(R.string.eq_global_title))
             .setContentText(Str.get(R.string.eq_global_notif))
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setDeleteIntent(
+                PendingIntent.getService(
+                    this, 2, Intent(this, GlobalEqService::class.java).setAction(ACTION_REPOST),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
             .addAction(
                 Notification.Action.Builder(
                     android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_notif_close),
@@ -61,7 +83,9 @@ class GlobalEqService : Service() {
 
     private companion object {
         const val ACTION_STOP = "com.lunaplayer.eq.STOP"
-        const val CHANNEL = "global_eq"
+        const val ACTION_REPOST = "com.lunaplayer.eq.REPOST"
+        const val OLD_CHANNEL = "global_eq"
+        const val CHANNEL = "global_eq_on"
         const val ID = 4207
     }
 }

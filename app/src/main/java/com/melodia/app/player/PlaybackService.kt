@@ -67,10 +67,11 @@ class PlaybackService : MediaSessionService() {
         // servidor se guarda en disco (StreamCache) para repetirlo al instante.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 20_000,
-                /* maxBufferMs = */ 60_000,
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 90_000,
                 /* bufferForPlaybackMs = */ 500,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+                // Tras un corte por red lenta, junta más antes de seguir: evita cortes en cadena.
+                /* bufferForPlaybackAfterRebufferMs = */ 5_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()

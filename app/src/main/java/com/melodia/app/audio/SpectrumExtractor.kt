@@ -196,6 +196,9 @@ object SpectrumExtractor {
                     file.outputStream().use { out ->
                         val buf = ByteArray(16 * 1024)
                         while (!closed) {
+                            // Si la canción que suena va justa de colchón, la onda espera: el audio primero.
+                            while (!closed && !com.melodia.app.player.StreamGate.healthy) Thread.sleep(300)
+                            if (closed) break
                             val n = input.read(buf)
                             if (n < 0) break
                             out.write(buf, 0, n)

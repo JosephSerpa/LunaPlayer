@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono de la notificación del ecualizador global (monocromo, como exige la barra de estado). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M5,9h2.5v10H5zM10.75,4h2.5v15h-2.5zM16.5,12H19v7h-2.5z" />
+</vector>

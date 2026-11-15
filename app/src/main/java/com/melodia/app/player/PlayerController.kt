@@ -391,7 +391,14 @@ class PlayerController(context: Context) {
                 controller?.let { c ->
                     val pos = c.currentPosition.coerceAtLeast(0)
                     _position.value = pos
-                    _buffered.value = c.bufferedPosition.coerceAtLeast(0)
+                    val buf = c.bufferedPosition.coerceAtLeast(0)
+                    _buffered.value = buf
+                    val dur = durationOf(c)
+                    StreamGate.update(
+                        remote = isRemote(c.currentMediaItem),
+                        headroomMs = buf - pos,
+                        complete = dur > 0 && buf >= dur - 1_000
+                    )
                     val now = System.currentTimeMillis()
                     if (now - lastSave >= 5_000) { savePosition(pos); lastSave = now } // cada ~5 s
                     countPlay(c, pos)
