@@ -159,86 +159,126 @@ object SpectrumExtractor {
     }
 
     /**
-     * Para canciones del servidor no se baja el archivo original (un FLAC pesa 25 MB o más):
-     * se pide una copia ligera (MP3 de 64 kbps, unas 25 veces menos datos) que basta para medir
-     * graves, medios y agudos. Se descarga y se analiza a la vez.
+     * Canciones del servidor: una sola descarga. El análisis lee a través de la misma caché que usa el
+     * reproductor, así que lo que ya bajó el reproductor se lee del disco y lo que baja el análisis queda
+     * guardado para el reproductor. Ningún dato se descarga dos veces.
+     *
+     * Mientras la canción que suena vaya justa de colchón ([com.melodia.app.player.StreamGate]), el
+     * análisis espera: el audio siempre tiene prioridad (también al saltar a la parte favorita).
      */
-    private fun lightUrl(uri: Uri): String {
-        val b = uri.buildUpon().clearQuery()
-        for (name in uri.queryParameterNames) {
-            if (name == "maxBitRate" || name == "format" || name == "estimateContentLength") continue
-            b.appendQueryParameter(name, uri.getQueryParameter(name))
-        }
-        return com.melodia.app.data.server.ServerAuth.sign(
-            b.appendQueryParameter("maxBitRate", "64").appendQueryParameter("format", "mp3").build()
-        ).toString()
-    }
-
-    /** Descarga en segundo plano a un archivo temporal y deja leerlo mientras todavía se baja. */
-    private class RemoteSource(url: String, dir: File) : MediaDataSource() {
-        private val file = File.createTempFile("spec", ".mp3", dir)
-        private val raf = RandomAccessFile(file, "r")
-        private val lock = Object()
-        @Volatile private var written = 0L
-        @Volatile private var done = false
+    private class CachedSource(context: Context, private val uri: Uri) : MediaDataSource() {
+        private val ds = com.melodia.app.player.StreamCache.analysisSource(context)
+        private val lock = Any()
         @Volatile private var closed = false
-        @Volatile private var error: Throwable? = null
-        @Volatile private var conn: HttpURLConnection? = null
-        private val thread = Thread({
-            try {
-                val c = URL(url).openConnection() as HttpURLConnection
-                conn = c
-                c.connectTimeout = 8_000
-                c.readTimeout = 15_000
-                val code = c.responseCode
-                if (code !in 200..299) throw IOException("HTTP $code")
-                c.inputStream.use { input ->
-                    file.outputStream().use { out ->
-                        val buf = ByteArray(16 * 1024)
-                        while (!closed) {
-                            // Si la canción que suena va justa de colchón, la onda espera: el audio primero.
-                            while (!closed && !com.melodia.app.player.StreamGate.healthy) Thread.sleep(300)
-                            if (closed) break
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            written += n
-                            synchronized(lock) { lock.notifyAll() }
-                        }
-                    }
-                }
-            } catch (t: Throwable) {
-                if (!closed) error = t
-            } finally {
-                done = true
-                synchronized(lock) { lock.notifyAll() }
-            }
-        }, "spectrum-dl").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
+        private var pos = -1L
+        private var length = -1L
+
+        init {
+            val n = ds.open(androidx.media3.datasource.DataSpec(uri))
+            if (n != androidx.media3.common.C.LENGTH_UNSET.toLong()) length = n
+            pos = 0L
+        }
+
+        /** El servidor permite pedir trozos sueltos (archivo original con tamaño conocido). */
+        val seekable: Boolean get() = length > 0
 
         override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
             if (size == 0) return 0
+            if (length in 1..position) return -1
+            while (!closed && !com.melodia.app.player.StreamGate.healthy) Thread.sleep(250)
             synchronized(lock) {
-                while (written <= position && !done && !closed) lock.wait(250)
                 if (closed) return -1
-                if (written <= position) {
-                    error?.let { throw IOException(it) }
-                    return -1
+                try {
+                    if (position != pos) {
+                        runCatching { ds.close() }
+                        ds.open(
+                            androidx.media3.datasource.DataSpec.Builder()
+                                .setUri(uri).setPosition(position).build()
+                        )
+                        pos = position
+                    }
+                    val n = ds.read(buffer, offset, size)
+                    if (n == androidx.media3.common.C.RESULT_END_OF_INPUT) return -1
+                    pos += n
+                    return n
+                } catch (t: Throwable) {
+                    pos = -1L
+                    if (closed) return -1
+                    throw IOException(t)
                 }
-                raf.seek(position)
-                val n = raf.read(buffer, offset, minOf(size.toLong(), written - position).toInt())
-                return if (n <= 0) -1 else n
             }
         }
 
-        override fun getSize(): Long = -1L
+        override fun getSize(): Long = length
 
         override fun close() {
             closed = true
-            runCatching { conn?.disconnect() }
-            synchronized(lock) { lock.notifyAll() }
-            runCatching { thread.interrupt() }
-            runCatching { raf.close() }
-            runCatching { file.delete() }
+            runCatching { ds.close() }
+        }
+    }
+
+    /** Sumas por porción y filtros de graves/medios. */
+    private class Bands(val n: Int, sampleRate: Int) {
+        val sumX = DoubleArray(n)
+        val sumLow = DoubleArray(n)
+        val sumMid = DoubleArray(n)
+        val sumHigh = DoubleArray(n)
+        val count = LongArray(n)
+        var sampleRate = sampleRate; private set
+        private var aLow = SpectrumExtractor.coef(LOW_HZ, sampleRate)
+        private var aMid = SpectrumExtractor.coef(MID_HZ, sampleRate)
+        private var a1 = 0.0
+        private var a2 = 0.0
+        private var b1 = 0.0
+        private var b2 = 0.0
+
+        fun setRate(sr: Int) {
+            sampleRate = sr
+            aLow = SpectrumExtractor.coef(LOW_HZ, sr)
+            aMid = SpectrumExtractor.coef(MID_HZ, sr)
+        }
+
+        fun resetFilters() { a1 = 0.0; a2 = 0.0; b1 = 0.0; b2 = 0.0 }
+
+        fun add(x: Double, b: Int) {
+            a1 += aLow * (x - a1)
+            a2 += aLow * (a1 - a2)
+            b1 += aMid * (x - b1)
+            b2 += aMid * (b1 - b2)
+            val lo = a2
+            val mi = b2 - a2
+            val hi = x - b2
+            sumX[b] += x * x
+            sumLow[b] += lo * lo
+            sumMid[b] += mi * mi
+            sumHigh[b] += hi * hi
+            count[b]++
+        }
+
+        fun spectrum(progress: Float = 1f) = SpectrumExtractor.buildSpectrum(sumX, sumLow, sumMid, sumHigh, count, progress)
+    }
+
+    /** Formato del audio decodificado (cambia cuando el decodificador avisa). */
+    private class Pcm(var channels: Int, var floatPcm: Boolean = false)
+
+    /** Lee una muestra mono (promedio de canales) del búfer de salida. */
+    private inline fun forEachFrame(
+        out: java.nio.ByteBuffer, info: MediaCodec.BufferInfo, pcm: Pcm,
+        block: (k: Int, x: Double) -> Boolean
+    ) {
+        out.position(info.offset)
+        out.limit(info.offset + info.size)
+        out.order(ByteOrder.nativeOrder())
+        val ch = pcm.channels
+        val frames = info.size / ((if (pcm.floatPcm) 4 else 2) * ch)
+        val shorts = if (pcm.floatPcm) null else out.asShortBuffer()
+        val floats = if (pcm.floatPcm) out.asFloatBuffer() else null
+        for (k in 0 until frames) {
+            var x = 0.0
+            for (c in 0 until ch) {
+                x += if (floats != null) floats.get().toDouble() else shorts!!.get() / 32768.0
+            }
+            if (!block(k, x / ch)) return
         }
     }
 
@@ -248,15 +288,15 @@ object SpectrumExtractor {
         withContext(worker) {
             val extractor = MediaExtractor()
             var codec: MediaCodec? = null
-            var source: RemoteSource? = null
-            // Si se cancela (otra canción), se corta la descarga: el análisis no se queda bloqueado.
+            var source: CachedSource? = null
+            // Si se cancela (otra canción), se corta la lectura: el análisis no se queda bloqueado.
             val watcher = launch(Dispatchers.IO) {
                 try { awaitCancellation() } finally { runCatching { source?.close() } }
             }
             try {
-                if (isRemote(uri)) {
-                    val dir = File(context.cacheDir, "spectra").apply { mkdirs() }
-                    source = RemoteSource(lightUrl(uri), dir)
+                val remote = isRemote(uri)
+                if (remote) {
+                    source = CachedSource(context, uri)
                     extractor.setDataSource(source)
                 } else {
                     extractor.setDataSource(context, uri, null)
@@ -273,181 +313,31 @@ object SpectrumExtractor {
                 extractor.selectTrack(track)
 
                 val mime = trackFormat.getString(MediaFormat.KEY_MIME)!!
-                // La duración que ya conocemos de la canción manda (la del MP3 ligero es aproximada).
                 val durationUs = if (durationMsHint > 0) durationMsHint * 1000L
                 else if (trackFormat.containsKey(MediaFormat.KEY_DURATION))
                     trackFormat.getLong(MediaFormat.KEY_DURATION) else 0L
                 if (durationUs <= 0L) return@withContext Spectrum.FAILED
 
-                var sampleRate = intOr(trackFormat, MediaFormat.KEY_SAMPLE_RATE, 44100)
-                var channels = intOr(trackFormat, MediaFormat.KEY_CHANNEL_COUNT, 2).coerceAtLeast(1)
-                var floatPcm = false
+                val bands = Bands(BUCKETS, intOr(trackFormat, MediaFormat.KEY_SAMPLE_RATE, 44100))
+                val pcm = Pcm(intOr(trackFormat, MediaFormat.KEY_CHANNEL_COUNT, 2).coerceAtLeast(1))
 
-                codec = MediaCodec.createDecoderByType(mime)
-                codec.configure(trackFormat, null, null, 0)
-                codec.start()
+                val c = MediaCodec.createDecoderByType(mime)
+                codec = c
+                c.configure(trackFormat, null, null, 0)
+                c.start()
 
-                val n = BUCKETS
-                val sumX = DoubleArray(n)
-                val sumLow = DoubleArray(n)
-                val sumMid = DoubleArray(n)
-                val sumHigh = DoubleArray(n)
-                val count = LongArray(n)
-
-                // Filtros pasa-bajos de dos polos: a = graves, b = graves + medios.
-                var aLow = coef(LOW_HZ, sampleRate)
-                var aMid = coef(MID_HZ, sampleRate)
-                var a1 = 0.0
-                var a2 = 0.0
-                var b1 = 0.0
-                var b2 = 0.0
-                var frame = 0L
-                var totalFrames = durationUs / 1_000_000.0 * sampleRate
-
-                val info = MediaCodec.BufferInfo()
-                var inputDone = false
-                var outputDone = false
-                var idleLoops = 0
-                var lastEmit = 0L
-                val remote = isRemote(uri)
-                val startNs = System.nanoTime()
-                var lastAdvanceNs = startNs
-                var lastPts = 0L
-                var skips = 0
-                var errors = 0
-
-                // Si el decodificador se atasca o falla en un tramo dañado, salta ~1,5 s y sigue.
-                fun skipAhead(): Boolean {
-                    if (++skips > 40) return false
-                    val target = lastPts + 1_500_000L
-                    return runCatching {
-                        codec?.flush()
-                        extractor.seekTo(target, MediaExtractor.SEEK_TO_NEXT_SYNC)
-                        inputDone = false
-                        idleLoops = 0
-                        lastAdvanceNs = System.nanoTime()
-                        lastPts = target
-                        true
-                    }.getOrDefault(false)
+                // Muestreo: un trozo corto en el centro de cada porción en vez de decodificar todo.
+                // Mucho más rápido (sobre todo en DAP); si el formato no permite saltar bien, se
+                // analiza la canción completa como antes.
+                val canSample = !remote || source?.seekable == true
+                val sampled = if (canSample) sampled(extractor, c, bands, pcm, durationUs, onProgress) else null
+                val result = sampled ?: run {
+                    runCatching { c.flush() }
+                    extractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                    val fresh = Bands(BUCKETS, bands.sampleRate)
+                    sequential(extractor, c, fresh, pcm, durationUs, remote, onProgress)
                 }
-
-                while (!outputDone) {
-                    ensureActive()
-                    try {
-                    val nowNs = System.nanoTime()
-                    // Tope total: si tarda demasiado se entrega lo que haya (y no se guarda como completo).
-                    if (nowNs - startNs > (if (remote) 240L else 150L) * 1_000_000_000L) break
-                    if (!remote && nowNs - lastAdvanceNs > 6_000_000_000L) {
-                        if (!skipAhead()) break
-                    }
-
-                    if (!inputDone) {
-                        val inIdx = codec.dequeueInputBuffer(5_000)
-                        if (inIdx >= 0) {
-                            val buf = codec.getInputBuffer(inIdx)!!
-                            val size = extractor.readSampleData(buf, 0)
-                            if (size < 0) {
-                                codec.queueInputBuffer(
-                                    inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM
-                                )
-                                inputDone = true
-                            } else {
-                                codec.queueInputBuffer(inIdx, 0, size, extractor.sampleTime, 0)
-                                extractor.advance()
-                            }
-                        }
-                    }
-
-                    val outIdx = codec.dequeueOutputBuffer(info, 5_000)
-                    when {
-                        outIdx >= 0 -> {
-                            idleLoops = 0
-                            lastAdvanceNs = System.nanoTime()
-                            if (info.size > 0) {
-                                // La posición real del audio manda: así un tramo saltado no descuadra la barra.
-                                if (info.presentationTimeUs > 0L) {
-                                    frame = info.presentationTimeUs * sampleRate / 1_000_000L
-                                    lastPts = info.presentationTimeUs
-                                }
-                                val out = codec.getOutputBuffer(outIdx)!!
-                                out.position(info.offset)
-                                out.limit(info.offset + info.size)
-                                out.order(ByteOrder.nativeOrder())
-                                val frames = info.size / ((if (floatPcm) 4 else 2) * channels)
-                                val shorts = if (floatPcm) null else out.asShortBuffer()
-                                val floats = if (floatPcm) out.asFloatBuffer() else null
-                                for (k in 0 until frames) {
-                                    var x = 0.0
-                                    for (c in 0 until channels) {
-                                        x += if (floats != null) floats.get().toDouble()
-                                        else shorts!!.get() / 32768.0
-                                    }
-                                    x /= channels
-
-                                    a1 += aLow * (x - a1)
-                                    a2 += aLow * (a1 - a2)
-                                    b1 += aMid * (x - b1)
-                                    b2 += aMid * (b1 - b2)
-                                    val lo = a2
-                                    val mi = b2 - a2
-                                    val hi = x - b2
-
-                                    val b = ((frame / totalFrames) * n).toInt().coerceIn(0, n - 1)
-                                    sumX[b] += x * x
-                                    sumLow[b] += lo * lo
-                                    sumMid[b] += mi * mi
-                                    sumHigh[b] += hi * hi
-                                    count[b]++
-                                    frame++
-                                }
-                            }
-                            codec.releaseOutputBuffer(outIdx, false)
-                            // Avance visible: la barra se va llenando a medida que se analiza.
-                            if (onProgress != null) {
-                                val now = System.nanoTime()
-                                if (now - lastEmit > 120_000_000L) {
-                                    lastEmit = now
-                                    onProgress(
-                                        buildSpectrum(
-                                            sumX, sumLow, sumMid, sumHigh, count,
-                                            (frame / totalFrames).toFloat().coerceIn(0f, 0.999f)
-                                        )
-                                    )
-                                }
-                            }
-                            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                                outputDone = true
-                            }
-                        }
-                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            val f = codec.outputFormat
-                            sampleRate = intOr(f, MediaFormat.KEY_SAMPLE_RATE, sampleRate)
-                            channels = intOr(f, MediaFormat.KEY_CHANNEL_COUNT, channels).coerceAtLeast(1)
-                            floatPcm = intOr(
-                                f, MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT
-                            ) == AudioFormat.ENCODING_PCM_FLOAT
-                            aLow = coef(LOW_HZ, sampleRate)
-                            aMid = coef(MID_HZ, sampleRate)
-                            totalFrames = durationUs / 1_000_000.0 * sampleRate
-                        }
-                        else -> {
-                            // Sin salida disponible: si ya no hay entrada, evita quedarse esperando para siempre.
-                            if (inputDone && ++idleLoops > 400) outputDone = true
-                        }
-                    }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        if (++errors > 12 || !skipAhead()) break
-                    }
-                }
-
-                val covered = count.count { it > 0L }
-                val spec = buildSpectrum(sumX, sumLow, sumMid, sumHigh, count)
-                // Casi nada analizado: fallo. Con huecos: se rellenan y se muestra, sin guardarlo.
-                if (covered < n / 4) Spectrum.FAILED
-                else if (covered < n * 0.92) Spectrum(spec.level, spec.low, spec.mid, spec.high, true, 1f, exact = false)
-                else spec
+                result
             } finally {
                 watcher.cancel()
                 runCatching { codec?.stop() }
@@ -456,6 +346,222 @@ object SpectrumExtractor {
                 runCatching { source?.close() }
             }
         }
+
+    /** Duración del trozo que se decodifica por porción. */
+    private const val WINDOW_US = 350_000L
+
+    /**
+     * Decodifica solo un trozo de [WINDOW_US] por porción. Devuelve null si el archivo no permite
+     * saltar con precisión (entonces se usa el análisis completo).
+     */
+    private suspend fun kotlinx.coroutines.CoroutineScope.sampled(
+        extractor: MediaExtractor, codec: MediaCodec, bands: Bands, pcm: Pcm, durationUs: Long,
+        onProgress: ((Spectrum) -> Unit)?
+    ): Spectrum? {
+        val n = bands.n
+        val bucketUs = durationUs / n
+        val win = minOf(bucketUs, WINDOW_US)
+        val info = MediaCodec.BufferInfo()
+        val startNs = System.nanoTime()
+        var lastEmit = 0L
+        var badSeeks = 0
+        for (i in 0 until n) {
+            ensureActive()
+            // Tope total generoso: si no alcanza, se entrega lo que haya sin guardarlo.
+            if (System.nanoTime() - startNs > 90_000_000_000L) break
+            val start = (i * bucketUs + (bucketUs - win) / 2).coerceAtLeast(0L)
+            val end = start + win
+            try {
+                codec.flush()
+                extractor.seekTo(start, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                val landed = extractor.sampleTime
+                if (landed < 0) break
+                // El salto cayó lejos: este formato no salta bien. Dos fallos seguidos → análisis completo.
+                if (i > 0 && kotlin.math.abs(landed - start) > 3_000_000L) {
+                    if (++badSeeks >= 2) return null
+                    continue
+                }
+                badSeeks = 0
+                bands.resetFilters()
+                var inputDone = false
+                var segDone = false
+                val segStart = System.nanoTime()
+                while (!segDone) {
+                    ensureActive()
+                    if (System.nanoTime() - segStart > 3_000_000_000L) break // tramo atascado: se salta
+                    if (!inputDone) {
+                        val inIdx = codec.dequeueInputBuffer(5_000)
+                        if (inIdx >= 0) {
+                            val buf = codec.getInputBuffer(inIdx)!!
+                            val size = extractor.readSampleData(buf, 0)
+                            if (size < 0 || extractor.sampleTime > end + 500_000L) {
+                                codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                codec.queueInputBuffer(inIdx, 0, size, extractor.sampleTime, 0)
+                                extractor.advance()
+                            }
+                        }
+                    }
+                    val outIdx = codec.dequeueOutputBuffer(info, 5_000)
+                    when {
+                        outIdx >= 0 -> {
+                            if (info.size > 0) {
+                                val pts = info.presentationTimeUs
+                                val sr = bands.sampleRate
+                                forEachFrame(codec.getOutputBuffer(outIdx)!!, info, pcm) { k, x ->
+                                    val t = pts + k * 1_000_000L / sr
+                                    when {
+                                        t < start -> true
+                                        t >= end -> { segDone = true; false }
+                                        else -> { bands.add(x, i); true }
+                                    }
+                                }
+                            }
+                            codec.releaseOutputBuffer(outIdx, false)
+                            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) segDone = true
+                        }
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            val f = codec.outputFormat
+                            bands.setRate(intOr(f, MediaFormat.KEY_SAMPLE_RATE, bands.sampleRate))
+                            pcm.channels = intOr(f, MediaFormat.KEY_CHANNEL_COUNT, pcm.channels).coerceAtLeast(1)
+                            pcm.floatPcm = intOr(
+                                f, MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT
+                            ) == AudioFormat.ENCODING_PCM_FLOAT
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Tramo ilegible: queda vacío y se rellena con el vecino al final.
+            }
+            if (onProgress != null) {
+                val now = System.nanoTime()
+                if (now - lastEmit > 120_000_000L) {
+                    lastEmit = now
+                    onProgress(bands.spectrum(((i + 1f) / n).coerceAtMost(0.999f)))
+                }
+            }
+        }
+        return finish(bands)
+    }
+
+    /** Resultado final: con muchos huecos se muestra pero no se guarda; casi vacío es fallo. */
+    private fun finish(bands: Bands): Spectrum {
+        val n = bands.n
+        val covered = bands.count.count { it > 0L }
+        val spec = bands.spectrum()
+        return if (covered < n / 4) Spectrum.FAILED
+        else if (covered < n * 0.92) Spectrum(spec.level, spec.low, spec.mid, spec.high, true, 1f, exact = false)
+        else spec
+    }
+
+    /** Análisis completo, de principio a fin (formatos que no permiten saltar o servidor sin trozos). */
+    private suspend fun kotlinx.coroutines.CoroutineScope.sequential(
+        extractor: MediaExtractor, codec: MediaCodec, bands: Bands, pcm: Pcm, durationUs: Long,
+        remote: Boolean, onProgress: ((Spectrum) -> Unit)?
+    ): Spectrum {
+        val n = bands.n
+        var frame = 0L
+        var totalFrames = durationUs / 1_000_000.0 * bands.sampleRate
+        val info = MediaCodec.BufferInfo()
+        var inputDone = false
+        var outputDone = false
+        var idleLoops = 0
+        var lastEmit = 0L
+        val startNs = System.nanoTime()
+        var lastAdvanceNs = startNs
+        var lastPts = 0L
+        var skips = 0
+        var errors = 0
+
+        // Si el decodificador se atasca o falla en un tramo dañado, salta ~1,5 s y sigue.
+        fun skipAhead(): Boolean {
+            if (++skips > 40) return false
+            val target = lastPts + 1_500_000L
+            return runCatching {
+                codec.flush()
+                extractor.seekTo(target, MediaExtractor.SEEK_TO_NEXT_SYNC)
+                inputDone = false
+                idleLoops = 0
+                lastAdvanceNs = System.nanoTime()
+                lastPts = target
+                true
+            }.getOrDefault(false)
+        }
+
+        while (!outputDone) {
+            ensureActive()
+            try {
+                val nowNs = System.nanoTime()
+                // En la nube el tope es amplio: la lectura puede esperar a que el audio tenga colchón.
+                if (nowNs - startNs > (if (remote) 600L else 150L) * 1_000_000_000L) break
+                if (!remote && nowNs - lastAdvanceNs > 6_000_000_000L) {
+                    if (!skipAhead()) break
+                }
+                if (!inputDone) {
+                    val inIdx = codec.dequeueInputBuffer(5_000)
+                    if (inIdx >= 0) {
+                        val buf = codec.getInputBuffer(inIdx)!!
+                        val size = extractor.readSampleData(buf, 0)
+                        if (size < 0) {
+                            codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            codec.queueInputBuffer(inIdx, 0, size, extractor.sampleTime, 0)
+                            extractor.advance()
+                        }
+                    }
+                }
+                val outIdx = codec.dequeueOutputBuffer(info, 5_000)
+                when {
+                    outIdx >= 0 -> {
+                        idleLoops = 0
+                        lastAdvanceNs = System.nanoTime()
+                        if (info.size > 0) {
+                            if (info.presentationTimeUs > 0L) {
+                                frame = info.presentationTimeUs * bands.sampleRate / 1_000_000L
+                                lastPts = info.presentationTimeUs
+                            }
+                            forEachFrame(codec.getOutputBuffer(outIdx)!!, info, pcm) { _, x ->
+                                val b = ((frame / totalFrames) * n).toInt().coerceIn(0, n - 1)
+                                bands.add(x, b)
+                                frame++
+                                true
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIdx, false)
+                        if (onProgress != null) {
+                            val now = System.nanoTime()
+                            if (now - lastEmit > 120_000_000L) {
+                                lastEmit = now
+                                onProgress(bands.spectrum((frame / totalFrames).toFloat().coerceIn(0f, 0.999f)))
+                            }
+                        }
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                    }
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val f = codec.outputFormat
+                        bands.setRate(intOr(f, MediaFormat.KEY_SAMPLE_RATE, bands.sampleRate))
+                        pcm.channels = intOr(f, MediaFormat.KEY_CHANNEL_COUNT, pcm.channels).coerceAtLeast(1)
+                        pcm.floatPcm = intOr(
+                            f, MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT
+                        ) == AudioFormat.ENCODING_PCM_FLOAT
+                        totalFrames = durationUs / 1_000_000.0 * bands.sampleRate
+                    }
+                    else -> {
+                        if (inputDone && ++idleLoops > 400) outputDone = true
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (++errors > 12 || !skipAhead()) break
+            }
+        }
+        return finish(bands)
+    }
 
     private fun intOr(f: MediaFormat, key: String, default: Int): Int =
         if (f.containsKey(key)) f.getInteger(key) else default

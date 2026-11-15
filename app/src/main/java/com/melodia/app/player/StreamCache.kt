@@ -84,6 +84,12 @@ object StreamCache {
     fun playerFactory(context: Context): DataSource.Factory =
         DefaultDataSource.Factory(context.applicationContext, cached(context))
 
+    /**
+     * Para el análisis de la onda: lee por la misma caché que el reproductor (una sola descarga por
+     * canción: lo que baja uno lo aprovecha el otro).
+     */
+    fun analysisSource(context: Context): DataSource = cached(context).createDataSource()
+
     private val worker = Executors.newSingleThreadExecutor { r ->
         Thread(r, "prefetch").apply { priority = Thread.MIN_PRIORITY }
     }
