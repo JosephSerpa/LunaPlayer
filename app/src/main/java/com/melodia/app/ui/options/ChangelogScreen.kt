@@ -31,6 +31,27 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.8.1",
+        listOf(
+            "Notificación del ecualizador global siempre visible en la barra de estado; solo se quita con la ✕ (que también lo apaga).",
+            "Música del servidor: menos cortes. La onda ya no le quita conexión al audio y, tras un corte por red lenta, se junta más colchón antes de seguir.",
+            "Saltar a la mitad de una canción de la nube (también con el Modo Luna) carga mucho más rápido.",
+            "Onda mucho más rápida, sobre todo en DAPs: se analizan 96 trozos cortos en lugar de la canción entera.",
+            "La marca de carga ya no aparece en canciones que ya están completas en el teléfono.",
+            "Mezclar toda la biblioteca: la cola ya no se limita a 400 canciones.",
+            "Pantallas bajas (DAPs de 720p): carátula más grande en el reproductor."
+        ),
+        listOf(
+            "Global equalizer notification always visible in the status bar; it only goes away with the ✕ (which also turns it off).",
+            "Server music: fewer dropouts. The waveform no longer takes bandwidth from the audio and, after a slow-network gap, a bigger buffer is built before resuming.",
+            "Jumping to the middle of a cloud song (also with Luna mode) loads much faster.",
+            "Much faster waveform, especially on DAPs: 96 short slices are analysed instead of the whole song.",
+            "The loading mark no longer shows on songs that are already fully stored on the phone.",
+            "Shuffle the whole library: the queue is no longer capped at 400 songs.",
+            "Short screens (720p DAPs): bigger cover in the player."
+        )
+    ),
+    Release(
         "2.8.0",
         listOf(
             "Modo DAP (bit-perfect) en Ajustes: apaga los efectos propios para que el audio salga sin procesar hacia el DAC.",

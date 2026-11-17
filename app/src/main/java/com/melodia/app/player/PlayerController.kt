@@ -166,8 +166,29 @@ class PlayerController(context: Context) {
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) startProgressLoop() else {
+                // Cargando tras un salto: el repaso sigue para que el semáforo de red se actualice
+                // (si se detuviera, la onda seguiría descargando y le quitaría conexión al audio).
+                val c = controller
+                if (c != null && c.playWhenReady && c.playbackState == Player.STATE_BUFFERING) return
                 progressJob?.cancel()
-                controller?.let { savePosition(it.currentPosition) }
+                c?.let { savePosition(it.currentPosition) }
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            val c = controller ?: return
+            if (playbackState == Player.STATE_BUFFERING && isRemote(c.currentMediaItem)) {
+                StreamGate.block()
+                if (c.playWhenReady && progressJob?.isActive != true) startProgressLoop()
+            }
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
+        ) {
+            // Salto (también el automático del Modo Luna): el audio primero.
+            if (reason == Player.DISCONTINUITY_REASON_SEEK && isRemote(controller?.currentMediaItem)) {
+                StreamGate.block()
             }
         }
     }

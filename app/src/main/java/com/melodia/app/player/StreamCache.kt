@@ -88,7 +88,19 @@ object StreamCache {
      * Para el análisis de la onda: lee por la misma caché que el reproductor (una sola descarga por
      * canción: lo que baja uno lo aprovecha el otro).
      */
-    fun analysisSource(context: Context): DataSource = cached(context).createDataSource()
+    fun analysisSource(context: Context): DataSource =
+        // Solo lectura: aprovecha lo que ya bajó el reproductor, pero sus trozos sueltos NO se guardan.
+        // Guardarlos dejaba la canción "agujereada" en la caché y, al saltar a la mitad, el reproductor
+        // tenía que abrir una conexión nueva por cada hueco (carga lenta o que no terminaba).
+        cached(context).setCacheWriteDataSinkFactory(null).createDataSource()
+
+    /** La canción completa ya está en la caché (se escuchó entera): no hace falta mostrar la carga. */
+    fun isFullyCached(context: Context, uri: Uri): Boolean = runCatching {
+        val c = cache(context)
+        val key = keyFor(uri)
+        val len = androidx.media3.datasource.cache.ContentMetadata.getContentLength(c.getContentMetadata(key))
+        len > 0 && c.isCached(key, 0, len)
+    }.getOrDefault(false)
 
     private val worker = Executors.newSingleThreadExecutor { r ->
         Thread(r, "prefetch").apply { priority = Thread.MIN_PRIORITY }

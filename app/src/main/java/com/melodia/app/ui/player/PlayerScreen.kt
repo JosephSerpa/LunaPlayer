@@ -619,6 +619,7 @@ fun PlayerScreen(
                         spectrum = spectrum,
                         position = position,
                         remote = current.uri?.scheme?.startsWith("http") == true,
+                        uri = current.uri,
                         durationMs = current.durationMs,
                         accent = accent,
                         onSeek = onSeek,
@@ -892,11 +893,20 @@ private fun Timeline(
     bestMs: Long,
     onSetBest: (Long) -> Unit,
     onClearBest: () -> Unit,
-    remote: Boolean = false
+    remote: Boolean = false,
+    uri: android.net.Uri? = null
 ) {
     val positionMs by position.collectAsState()
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp
     val bufferedMs by app.playerController.buffered.collectAsState()
+    // Si la canción ya está entera en la caché (se escuchó completa), no hay nada que cargar:
+    // la marca de carga no se muestra. Se revisa al cambiar de canción y al terminar de cargar.
+    val bufAtEnd = durationMs > 0 && bufferedMs >= durationMs - 1_000
+    val fullyCached by produceState(false, uri, bufAtEnd) {
+        value = if (!remote || uri == null) false else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.melodia.app.player.StreamCache.isFullyCached(app, uri)
+        }
+    }
     val haptics = LocalHapticFeedback.current
     Column(Modifier.fillMaxWidth()) {
         SpectrumSeekBar(
@@ -907,7 +917,7 @@ private fun Timeline(
             onSeek = onSeek,
             bestFrac = if (bestMs >= 0 && durationMs > 0) (bestMs.toFloat() / durationMs).coerceIn(0f, 1f) else -1f,
             // Solo la música de la nube muestra cuánto va descargado.
-            bufferedFrac = if (remote && durationMs > 0) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else -1f
+            bufferedFrac = if (remote && !fullyCached && durationMs > 0) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else -1f
         )
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

@@ -13,6 +13,9 @@ object StreamGate {
     var healthy: Boolean = true
         private set
 
+    /** Salto o carga en curso: el audio necesita toda la conexión ya, sin esperar al siguiente repaso. */
+    fun block() { healthy = false }
+
     fun update(remote: Boolean, headroomMs: Long, complete: Boolean) {
         healthy = when {
             !remote || complete -> true
