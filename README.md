@@ -122,4 +122,10 @@ Si te gusta Luna player: https://ko-fi.com/raizzon
 
 ## 📜 Licencia
 
-El código se publica para que se pueda **leer**, pero **no se puede usar, copiar, compilar ni redistribuir** sin permiso. Consulta [LICENSE](LICENSE). Las bibliotecas y tipografías de terceros mantienen sus propias licencias (Apache 2.0 y SIL OFL): ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Luna player es software libre y de código abierto, publicado bajo la **GNU General Public License v3.0 o posterior** (GPL-3.0-or-later). Puedes leer, usar, modificar y redistribuir el código, pero cualquier versión modificada o redistribuida debe seguir siendo GPL, con su código fuente disponible y manteniendo el aviso de autoría. Consulta [LICENSE](LICENSE).
+
+Copyright © Joseph Serpa. Las bibliotecas y tipografías de terceros mantienen sus propias licencias (Apache 2.0 y SIL OFL): ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+---
+
+Luna player is free and open-source software, released under the **GNU General Public License v3.0 or later**. You may use, study, modify and redistribute it, provided derivative works stay under the same license with source code available. See [LICENSE](LICENSE).
