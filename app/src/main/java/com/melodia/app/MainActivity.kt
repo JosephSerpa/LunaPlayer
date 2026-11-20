@@ -897,6 +897,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onPreviousTrack = controller::previousTrack,
                     hideCover = queueActive,
                     wide = wideLayout,
+                    song = remember(library.songs, songId) { library.songs.firstOrNull { it.id == songId } },
                     onEdit = {
                         val s = library.songs.firstOrNull { it.id == songId }
                         if (s != null && !s.isRemote) editSong = s

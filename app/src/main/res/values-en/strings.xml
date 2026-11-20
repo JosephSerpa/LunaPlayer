@@ -497,4 +497,14 @@
         <item quantity="one">%d hidden item</item>
         <item quantity="other">%d hidden items</item>
     </plurals>
+    <string name="lyrics_show">Show lyrics</string>
+    <string name="lyrics_hide">Hide lyrics</string>
+    <string name="lyrics_loading">Looking for lyrics…</string>
+    <string name="lyrics_none">No lyrics for this song</string>
+    <string name="lyrics_folder_hint">Android doesn\'t allow reading .lrc files without permission. Pick your music folder once so Luna can find them.</string>
+    <string name="lyrics_folder_btn">Choose music folder</string>
+    <string name="lyrics_expand">Show full lyrics</string>
+    <string name="lyrics_collapse">Back to artwork</string>
+    <string name="lyrics_follow">Back to current line</string>
+    <string name="lyrics_in_sync">Sync</string>
 </resources>

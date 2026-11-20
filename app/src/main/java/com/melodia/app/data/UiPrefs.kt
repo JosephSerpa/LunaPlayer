@@ -23,6 +23,15 @@ class UiPrefs(context: Context) {
         prefs.edit().putBoolean("home_life", on).apply()
     }
 
+    private val _lyrics = MutableStateFlow(prefs.getBoolean("lyrics_on", false))
+    /** Letras sobre la carátula en el reproductor. */
+    val lyrics: StateFlow<Boolean> = _lyrics.asStateFlow()
+
+    fun setLyrics(on: Boolean) {
+        _lyrics.value = on
+        prefs.edit().putBoolean("lyrics_on", on).apply()
+    }
+
     fun setSplit(mode: Int) {
         _split.value = mode
         prefs.edit().putInt("split", mode).apply()

@@ -31,6 +31,21 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.10.0",
+        listOf(
+            "Letras: nuevo botón junto a la luna. La letra aparece sobre la carátula, sigue a la canción sola y la línea actual crece mientras suena; el resto del reproductor se atenúa.",
+            "Toca una línea para saltar a ese momento. Si deslizas, el seguimiento se pausa y vuelve solo a los 3 s.",
+            "Letra completa: amplía la letra hasta la línea de tiempo, con ajuste fino de ±0,5 s por canción.",
+            "Lee archivos .lrc junto a la canción, la letra guardada dentro del archivo (MP3, FLAC, M4A) y la de Navidrome."
+        ),
+        listOf(
+            "Lyrics: new button next to the moon. Lyrics appear over the artwork, follow the song by themselves and the current line grows as it plays; the rest of the player dims.",
+            "Tap a line to jump there. If you scroll, following pauses and comes back after 3 s.",
+            "Full lyrics: expands the lyrics down to the timeline, with ±0.5 s fine-tuning per song.",
+            "Reads .lrc files next to the song, lyrics stored inside the file (MP3, FLAC, M4A) and Navidrome lyrics."
+        )
+    ),
+    Release(
         "2.9.0 – 2.9.1",
         listOf(
             "Ocultar canciones, álbumes, artistas y carpetas: mantenlos presionados y elige \"Ocultar\". Dejan de aparecer en la biblioteca, Inicio, búsquedas y mezclas, sin borrar nada.",

@@ -213,7 +213,9 @@ fun PlayerScreen(
     /** La cola está abierta: la carátula la dibuja la cola (misma carátula que viaja hasta su barra). */
     hideCover: Boolean = false,
     /** Diseño horizontal: carátula a un lado y el reproductor reducido al otro (se anima al girar). */
-    wide: Boolean = false
+    wide: Boolean = false,
+    /** La canción de la biblioteca que suena (para buscar su letra); null si no se conoce. */
+    song: com.melodia.app.data.Song? = null
 ) {
     val current = state.current ?: return
     val accent = accentColor
@@ -272,6 +274,44 @@ fun PlayerScreen(
     val close: () -> Unit = onClose
     BackHandler(enabled = !closing) { close() }
     BackHandler(enabled = panel != 0) { panel = 0 }
+
+    // --- Letras sobre la carátula ---
+    val lunaApp = context.applicationContext as com.melodia.app.MelodiaApp
+    val lyricsOn by lunaApp.ui.lyrics.collectAsState()
+    var lyricsFull by rememberSaveable { mutableStateOf(false) }
+    if (!lyricsOn && lyricsFull) lyricsFull = false
+    BackHandler(enabled = lyricsFull && panel == 0) { lyricsFull = false }
+    val lyricsShown = lyricsOn && !closing && !hideCover
+    val lyricsAnim by androidx.compose.animation.core.animateFloatAsState(
+        if (lyricsShown) 1f else 0f,
+        tween(460, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsOn"
+    )
+    val lyricsExpand by androidx.compose.animation.core.animateFloatAsState(
+        if (lyricsFull && lyricsShown) 1f else 0f,
+        tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsFull"
+    )
+    var treeVersion by remember { mutableStateOf(0) }
+    val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            com.melodia.app.data.LyricsRepository.setTree(context, uri)
+            treeVersion++
+        }
+    }
+    val lyricsUi by produceState<LyricsUi>(LyricsUi.Off, song?.id, lyricsOn, treeVersion) {
+        val s = song
+        if (!lyricsOn || s == null) { value = if (lyricsOn) LyricsUi.None(false) else LyricsUi.Off; return@produceState }
+        com.melodia.app.data.LyricsRepository.cached(s.id)?.let { value = LyricsUi.Ready(it); return@produceState }
+        value = LyricsUi.Loading
+        val l = com.melodia.app.data.LyricsRepository.load(context, s)
+        value = if (l != null) LyricsUi.Ready(l)
+        else LyricsUi.None(com.melodia.app.data.LyricsRepository.needsTree(context, s))
+    }
+    var lyricsShift by remember(song?.id) {
+        mutableStateOf(song?.let { com.melodia.app.data.LyricsRepository.offset(context, it) } ?: 0L)
+    }
+    var timelineTop by remember { mutableStateOf(-1f) }
 
     // Fondo: el color principal del álbum (ajustado para que el texto se lea).
     // La transición de color se lee solo al dibujar (drawBehind): no recompone nada por cuadro.
@@ -360,6 +400,15 @@ fun PlayerScreen(
                         )
                     }
             )
+            // Con las letras abiertas, el fondo se oscurece un poco para que destaquen.
+            if (lyricsAnim > 0.001f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = lyricsAnim }
+                        .background(Color.Black.copy(alpha = 0.26f + 0.2f * lyricsExpand))
+                )
+            }
             // Al llegar a la barra toma el mismo tono que el mini-reproductor.
             if (sheet != null && p < 0.5f) {
                 Box(
@@ -409,10 +458,12 @@ fun PlayerScreen(
                         androidx.compose.ui.graphics.BlurEffect(blur, blur, androidx.compose.ui.graphics.TileMode.Decal)
                     else null
                 }
+                // Con las letras abiertas, lo demás se atenúa (la línea de tiempo y los controles no).
+                val dimmed = appear.graphicsLayer { alpha = 1f - 0.45f * lyricsAnim - 0.4f * lyricsExpand }
 
                 // --- Barra superior ---
                 Row(
-                    appear.fillMaxWidth().padding(top = 8.dp),
+                    dimmed.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -522,7 +573,7 @@ fun PlayerScreen(
                         }
                 ) { SeekFlash(seekFx) }
 
-                Column(appear.fillMaxWidth().then(swipeDrag), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(dimmed.fillMaxWidth().then(swipeDrag), horizontalAlignment = Alignment.CenterHorizontally) {
                     // --- Título, artista y formato del audio ---
                     AnimatedContent(
                         targetState = current.title to current.artist,
@@ -614,7 +665,11 @@ fun PlayerScreen(
                     )
                 }
 
-                Box(appear.fillMaxWidth().then(swipeDrag)) {
+                Box(
+                    appear.fillMaxWidth().then(swipeDrag).onGloballyPositioned { c ->
+                        holder.box?.let { timelineTop = it.localBoundingBoxOf(c).top }
+                    }
+                ) {
                     Timeline(
                         spectrum = spectrum,
                         position = position,
@@ -625,7 +680,12 @@ fun PlayerScreen(
                         onSeek = onSeek,
                         bestMs = mark.bestMs,
                         onSetBest = onSetBest,
-                        onClearBest = onClearBest
+                        onClearBest = onClearBest,
+                        lyricsOn = lyricsOn,
+                        onToggleLyrics = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            lunaApp.ui.setLyrics(!lyricsOn)
+                        }
                     )
                 }
 
@@ -753,6 +813,37 @@ fun PlayerScreen(
                         land = look
                     )
                     }
+                }
+                // --- Letras: sobre la carátula o, al ampliarlas, hasta la línea de tiempo ---
+                if (!hideCover && lyricsAnim > 0.01f && rootSize.width > 0) {
+                    val padPx = with(density) { 14.dp.toPx() }
+                    val topPx = androidx.compose.foundation.layout.WindowInsets.systemBars.getTop(density) +
+                        with(density) { 64.dp.toPx() }
+                    val bottomPx = (if (timelineTop > 0f && !wide) timelineTop - with(density) { 8.dp.toPx() }
+                        else rootSize.height - androidx.compose.foundation.layout.WindowInsets.systemBars.getBottom(density) - padPx)
+                    val full = Rect(
+                        padPx, topPx,
+                        if (wide) maxOf(target.right, rootSize.width * 0.5f) else rootSize.width - padPx,
+                        maxOf(bottomPx, topPx + target.height * 0.6f)
+                    )
+                    val base = target.translate(swipeX.value * (1f - lyricsExpand), 0f)
+                    LyricsPanel(
+                        ui = lyricsUi,
+                        position = position,
+                        isPlaying = state.isPlaying,
+                        rect = lerpRect(base, full, lyricsExpand),
+                        alpha = lyricsAnim * contentAlpha,
+                        expand = lyricsExpand,
+                        shiftMs = lyricsShift,
+                        accent = accent,
+                        onSeek = onSeek,
+                        onToggleExpand = { lyricsFull = !lyricsFull },
+                        onShift = { ms ->
+                            lyricsShift = ms.coerceIn(-10_000L, 10_000L)
+                            song?.let { com.melodia.app.data.LyricsRepository.setOffset(context, it, lyricsShift) }
+                        },
+                        onPickFolder = { runCatching { treePicker.launch(null) } }
+                    )
                 }
             }
 
@@ -894,7 +985,9 @@ private fun Timeline(
     onSetBest: (Long) -> Unit,
     onClearBest: () -> Unit,
     remote: Boolean = false,
-    uri: android.net.Uri? = null
+    uri: android.net.Uri? = null,
+    lyricsOn: Boolean = false,
+    onToggleLyrics: () -> Unit = {}
 ) {
     val positionMs by position.collectAsState()
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp
@@ -971,7 +1064,27 @@ private fun Timeline(
                     }
                 }
             }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            // A la derecha de la luna: letras (misma forma que la luna).
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    Modifier
+                        .size(width = 56.dp, height = 42.dp)
+                        .pressable(onToggleLyrics)
+                        .then(
+                            if (lyricsOn) Modifier.background(accent.copy(alpha = 0.18f), RoundedCornerShape(50))
+                            else Modifier.glass(RoundedCornerShape(50), fill = 0.07f, border = 0.12f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        LyricsIcon,
+                        Str.get(if (lyricsOn) R.string.lyrics_hide else R.string.lyrics_show),
+                        tint = if (lyricsOn) accent else ink.copy(alpha = 0.75f),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
                 Text(durationMs.formatTime(), style = style, color = c, maxLines = 1)
             }
         }

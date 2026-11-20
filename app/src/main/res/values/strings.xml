@@ -497,4 +497,14 @@
         <item quantity="one">%d elemento oculto</item>
         <item quantity="other">%d elementos ocultos</item>
     </plurals>
+    <string name="lyrics_show">Mostrar letra</string>
+    <string name="lyrics_hide">Ocultar letra</string>
+    <string name="lyrics_loading">Buscando letra…</string>
+    <string name="lyrics_none">Sin letra para esta canción</string>
+    <string name="lyrics_folder_hint">Android no deja leer los archivos .lrc sin permiso. Elige tu carpeta de música una sola vez para que Luna los encuentre.</string>
+    <string name="lyrics_folder_btn">Elegir carpeta de música</string>
+    <string name="lyrics_expand">Ver letra completa</string>
+    <string name="lyrics_collapse">Volver a la carátula</string>
+    <string name="lyrics_follow">Volver a la línea actual</string>
+    <string name="lyrics_in_sync">Sincronía</string>
 </resources>

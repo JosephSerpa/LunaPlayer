@@ -275,6 +275,40 @@ object SubsonicClient {
             }
         }
 
+    /**
+     * Letra de una canción del servidor. Primero la letra con tiempos de OpenSubsonic
+     * (getLyricsBySongId, Navidrome 0.53+); si no, la letra simple de getLyrics.
+     */
+    suspend fun lyrics(c: ServerConfig, id: String, artist: String, title: String): com.melodia.app.data.Lyrics? {
+        runCatching {
+            val list = call(c, "getLyricsBySongId", mapOf("id" to id)).optJSONObject("lyricsList")
+                ?.optJSONArray("structuredLyrics") ?: JSONArray()
+            var best: JSONObject? = null
+            for (i in 0 until list.length()) {
+                val o = list.getJSONObject(i)
+                if (best == null || (o.optBoolean("synced") && best?.optBoolean("synced") != true)) best = o
+            }
+            best?.let { o ->
+                val lines = o.optJSONArray("line") ?: JSONArray()
+                val off = o.optLong("offset")
+                val synced = o.optBoolean("synced")
+                val out = (0 until lines.length()).map { k ->
+                    val l = lines.getJSONObject(k)
+                    com.melodia.app.data.LyricLine(
+                        if (synced) (l.optLong("start") - off).coerceAtLeast(0) else -1L,
+                        l.optString("value").trim()
+                    )
+                }
+                if (out.any { it.text.isNotBlank() }) return com.melodia.app.data.Lyrics(out, synced, "server")
+            }
+        }
+        return runCatching {
+            val v = call(c, "getLyrics", mapOf("artist" to artist, "title" to title))
+                .optJSONObject("lyrics")?.optString("value").orEmpty()
+            if (v.isBlank()) null else com.melodia.app.data.LyricsRepository.parse(v, "server")
+        }.getOrNull()
+    }
+
     suspend fun ping(c: ServerConfig): ServerInfo {
         val r = call(c, "ping")
         return ServerInfo(

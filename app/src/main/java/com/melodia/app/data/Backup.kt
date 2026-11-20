@@ -27,7 +27,7 @@ object Backup {
     private const val VERSION = 2
 
     /** Archivos de ajustes que se copian tal cual. */
-    private val PLAIN_PREFS = listOf("equalizer", "effects", "ui", "language", "dap")
+    private val PLAIN_PREFS = listOf("equalizer", "effects", "ui", "language", "dap", "lyrics")
 
     data class Result(val songs: Int, val matched: Int, val playlists: Int)
 
