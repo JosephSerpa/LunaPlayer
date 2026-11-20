@@ -1,86 +1,133 @@
-# Publicar Luna player en Google Play
+# Luna player 2.9.0 — Kit para subir a Google Play
 
-Paquete: `com.lunaplayer.app` · Versión 1.9.9 (código 104) · Min. Android 8.0 · Target Android 16 (API 36)
+Paquete `com.lunaplayer.app` · **Versión 2.9.0 (código 244)** · Min. Android 8.0 · Target Android 16 (API 36)
+Preparado el 2026-11-20. Fuente de cambios: `CHANGELOG.md`.
 
-## 1. Archivos que ya tienes
-| Qué | Dónde |
+## 1. Archivos
+| Qué | Dónde (en `Documents\Luna player`) |
 |---|---|
-| App Bundle para Play (.aab) | `LunaPlayer-1.9.9-play.aab` |
-| APK para GitHub / instalar a mano | `LunaPlayer-1.9.9-release.apk` |
-| Icono 512×512 | `store/icon-512.png` |
-| Gráfico de función 1024×500 | `store/feature-graphic.png` |
-| Política de privacidad | `PRIVACY.md` (enlace público: https://github.com/JosephSerpa/LunaPlayer/blob/main/PRIVACY.md) |
-| Llave de firma | `LunaPlayer-llave/` — **cópiala a un lugar seguro; sin ella no podrás actualizar** |
+| App Bundle para Play | `entregables\LunaPlayer-2.9.0-play.aab` (firmado con tu llave de subida, SHA-1 `d1f3aaa5…ba14`) |
+| APK para GitHub / testers sin Play | `entregables\LunaPlayer-2.9.0.apk` |
+| Icono 512×512 | `play-store\icon-512.png` |
+| Gráfico de función 1024×500 | `play-store\feature-graphic.png` (EN: `capturas\en-feature-graphic.png`) |
+| Capturas | `play-store\capturas\` (5 en español, 5 en inglés) |
+| Política de privacidad | https://github.com/JosephSerpa/LunaPlayer/blob/main/PRIVACY.md |
 
-Capturas de pantalla: haz 4–8 desde tu teléfono (vertical, mínimo 2). Sugeridas: biblioteca, reproductor, cola, ecualizador, Slow + Reverb.
+## 2. Notas de la versión (pégalas tal cual en "Notas de la versión")
+Máximo 500 caracteres por idioma (ES: 454, EN: 403).
 
-## 2. Textos de la ficha
+```
+<es-419>
+• Ocultar canciones, álbumes, artistas y carpetas (Ajustes → Ocultos para revertirlo).
+• Copia de seguridad completa: listas, me gusta, historial, ecualizador, ocultos y ajustes, sin contraseñas.
+• Modo DAP bit-perfect: el audio sale sin procesar hacia el DAC.
+• Música del servidor con menos cortes y saltos más rápidos.
+• Onda del reproductor mucho más rápida.
+• Notificación fija del ecualizador global.
+• Mezclar toda la biblioteca sin límite de 400.
+</es-419>
+<en-US>
+• Hide songs, albums, artists and folders (Settings → Hidden to undo).
+• Full backup: playlists, likes, history, equalizer, hidden items and settings, no passwords.
+• Bit-perfect DAP mode: audio goes unprocessed to the DAC.
+• Server music with fewer dropouts and faster seeking.
+• Much faster player waveform.
+• Persistent global equalizer notification.
+• Shuffle the whole library with no 400-song cap.
+</en-US>
+```
+Si tu idioma principal en la ficha es `es-ES` en lugar de `es-419`, cambia la etiqueta para que coincida.
 
-### Español (idioma principal)
-**Nombre (máx. 30):** Luna player
+## 3. Ficha de la tienda (actualizada; la anterior era de la 1.9.9)
+Ruta: *Crecimiento → Presencia en la tienda → Ficha principal*.
 
-**Descripción breve (máx. 80):** Reproductor minimalista con ecualizador, slow + reverb y servidor propio
+### Español
+**Nombre:** Luna player
+**Descripción breve (75/80):** Reproductor para DAP y móvil: bit-perfect, ecualizador y servidor Navidrome
 
 **Descripción completa:**
-Luna player es un reproductor de música oscuro, minimalista y fluido. El fondo de toda la app es la carátula de lo que suena, muy difuminada.
+Luna player es un reproductor de música oscuro, minimalista y fluido, pensado primero para reproductores de audio (DAP como FiiO, HiBy o Shanling) y que también va genial en teléfonos y tabletas. El fondo de la app es la carátula de lo que suena, suavemente difuminada.
 
-• Tu música del teléfono y, si quieres, de tu servidor Subsonic / Navidrome, todo junto.
-• Biblioteca por álbumes, artistas, canciones, listas, me gusta y carpetas (teléfono y nube por separado).
-• Ecualizador paramétrico de hasta 7 curvas, ±20 dB, con perfiles que guardas tú.
-• Slow + Reverb en tiempo real: velocidad, tono y reverberación con ajustes propios.
+SONIDO
+• Modo DAP (bit-perfect): la app no toca el audio; sale tal cual hacia el DAC interno, la salida balanceada o un DAC USB.
+• Ecualizador paramétrico de hasta 7 curvas, ±20 dB, con perfiles por dispositivo y ecualizador global para otras apps.
+• Slow + Reverb en tiempo real: velocidad, tono y reverberación.
 • Off vocal: reduce la voz principal.
-• Línea de tiempo con el espectro real de la canción y formato / kbps.
-• "Mejor parte" 🌙: marca tu momento favorito y activa el modo luna para empezar siempre ahí.
-• Me gusta, de 1 a 5 estrellas, listas de reproducción y cola editable (arrastra para reordenar).
-• Aleatorio de verdad: empieza en una canción al azar.
-• Español e inglés.
-• Sin anuncios, sin cuentas, sin rastreo.
+• Información técnica del archivo: frecuencia, bits, formato, ReplayGain y salida.
+
+TU MÚSICA
+• La música del teléfono y, si quieres, la de tu servidor Subsonic / Navidrome, todo junto.
+• Biblioteca por álbumes, artistas, canciones, carpetas, listas y me gusta.
+• Oculta canciones, álbumes, artistas o carpetas que no quieras ver, y recupéralos cuando quieras.
+• Me gusta, estrellas de 1 a 5, listas y cola editable sin límite.
+• "Mejor parte" 🌙: marca tu momento favorito y el modo Luna empieza siempre ahí.
+• Línea de tiempo con la onda real de la canción.
+
+TU INICIO
+• Pantalla de inicio con widgets que tú ordenas: lo más escuchado, recientes, rachas, Last.fm y lo que fijes.
+• Widget en la pantalla del teléfono y botones físicos de reproducción.
+
+TUS DATOS, TUYOS
+• Copia de seguridad en un archivo: listas, me gusta, historial, ecualizador, ocultos y ajustes. Pásala a otro dispositivo cuando quieras. Nunca incluye contraseñas.
+• Sin anuncios, sin cuentas y sin rastreo.
+• Código abierto (GPL-3.0): github.com/JosephSerpa/LunaPlayer
+
+Ligero y cuidadoso con la batería y el calor. En español e inglés.
 
 Hecho con cariño por la música. Si te gusta, puedes invitarme un café en Ko-fi.
 
-### English
+### English (Gestionar traducciones → en-US)
 **Name:** Luna player
-**Short description:** Minimal music player with equalizer, slow + reverb and your own server
-**Full description:**
-Luna player is a dark, minimalist, fluid music player. The whole app background is the artwork of what’s playing, softly blurred.
+**Short description (74/80):** Music player for DAPs and phones: bit-perfect, equalizer, Navidrome server
 
-• Your phone’s music and, if you want, your Subsonic / Navidrome server, all together.
-• Library by albums, artists, songs, playlists, liked and folders (phone and cloud separated).
-• Parametric equalizer with up to 7 curves, ±20 dB, with profiles you save yourself.
-• Real-time Slow + Reverb: speed, pitch and reverb with your own saved settings.
+**Full description:**
+Luna player is a dark, minimalist, fluid music player, built first for digital audio players (DAPs such as FiiO, HiBy or Shanling) and great on phones and tablets too. The app's background is the artwork of what's playing, softly blurred.
+
+SOUND
+• DAP mode (bit-perfect): the app doesn't touch the audio; it goes out as-is to the internal DAC, balanced output or a USB DAC.
+• Parametric equalizer with up to 7 curves, ±20 dB, per-device profiles and a global equalizer for other apps.
+• Real-time Slow + Reverb: speed, pitch and reverb.
 • Off vocal: reduces the lead vocal.
-• Timeline with the song’s real spectrum plus format / kbps.
-• “Best part” 🌙: mark your favorite moment and turn on moon mode to always start there.
-• Likes, 1–5 stars, playlists and an editable queue (drag to reorder).
-• True shuffle: starts on a random song.
-• Spanish and English.
+• Technical file info: sample rate, bits, format, ReplayGain and output.
+
+YOUR MUSIC
+• Your phone's music and, if you want, your Subsonic / Navidrome server, all together.
+• Library by albums, artists, songs, folders, playlists and likes.
+• Hide songs, albums, artists or folders you don't want to see, and bring them back any time.
+• Likes, 1–5 stars, playlists and an editable queue with no limit.
+• "Best part" 🌙: mark your favourite moment and Luna mode always starts there.
+• Timeline with the song's real waveform.
+
+YOUR HOME
+• A home screen with widgets you arrange: most played, recent, streaks, Last.fm and anything you pin.
+• Home-screen widget and physical playback buttons.
+
+YOUR DATA, YOURS
+• Backup to a file: playlists, likes, history, equalizer, hidden items and settings. Move it to another device whenever you want. Never includes passwords.
 • No ads, no accounts, no tracking.
+• Open source (GPL-3.0): github.com/JosephSerpa/LunaPlayer
+
+Light and careful with battery and heat. In Spanish and English.
 
 Made with love for music. If you like it, you can buy me a coffee on Ko-fi.
 
-## 3. Respuestas para los formularios de Play Console
-- **Categoría:** Música y audio · **Tipo:** Aplicación · **Gratuita**.
-- **Contenido de la app → Política de privacidad:** enlace de arriba.
-- **Anuncios:** No contiene anuncios.
-- **Acceso a la app:** todo es accesible sin cuenta (no hay inicio de sesión de la app; el servidor es opcional).
-- **Público objetivo:** 18 años o más (evita el programa "Familias"). No atrae a menores.
-- **Clasificación de contenido (cuestionario IARC):** utilidad / reproductor; sin violencia, sexo, drogas, apuestas ni contenido generado por usuarios → saldrá apta para todos.
-- **Seguridad de los datos:** "No recopila ni comparte datos". No marques cifrado en tránsito: la app permite servidores `http` del propio usuario.
-- **Servicio en primer plano (tipo `mediaPlayback`):** declara que se usa para reproducir música con la pantalla apagada y los controles en la notificación. Play puede pedir un vídeo corto: grábalo con la pantalla abierta, dando play y bloqueando el teléfono.
-- **Permiso de audio (`READ_MEDIA_AUDIO`):** es la función principal (reproducir tu música local).
-- **Tráfico sin cifrar (`usesCleartextTraffic`):** se mantiene para servidores caseros sin HTTPS. Si Play lo cuestiona, explica que es solo para el servidor que el propio usuario configura.
+## 4. Revisa antes de enviar (Contenido de la app)
+- **Seguridad de los datos:** sigue siendo "No recopila ni comparte datos". La app no tiene servidor propio ni analítica.
+  - Last.fm y tu servidor Navidrome son opcionales y los activa el propio usuario con su cuenta. Google trata las transferencias que inicia el usuario hacia un servicio que él elige como excepción a "compartir". Si Play pregunta, explícalo así.
+  - La copia de seguridad se guarda donde el usuario elige y no sale del teléfono.
+- **Servicio en primer plano `mediaPlayback`:** sin cambios (música con pantalla apagada y controles en la notificación).
+- **Anuncios:** no. **Acceso a la app:** todo sin cuenta. **Público:** 18+.
+- **"Missing sign in details":** responde *"Todas las funciones están disponibles sin acceso especial"* y guarda. Si el aviso sigue, recarga la página y vuelve a guardar.
 
-## 4. Pasos
-1. **Cuenta de desarrollador:** https://play.google.com/console → pago único (~25 USD) y verificación de identidad (documento y a veces dirección). Puede tardar días.
-2. **Crear app:** *Crear app* → nombre `Luna player`, idioma Español, App, Gratuita, acepta las declaraciones.
-3. **Panel → Configura tu app:** completa política de privacidad, anuncios, acceso a la app, clasificación de contenido, público objetivo, seguridad de los datos y declaraciones (ver sección 3).
-4. **Ficha de la tienda principal:** textos de la sección 2, icono 512, gráfico 1024×500 y capturas. Añade la traducción al inglés en *Gestionar traducciones*.
-5. **Firma de apps:** al subir el primer .aab, Play te ofrece **Play App Signing**. Acepta: tu llave actual actúa como *llave de subida* y Google guarda la de distribución.
-6. **Prueba cerrada (si tu cuenta es personal y nueva):** Play exige una prueba cerrada con un mínimo de testers (hoy, 12) durante 14 días seguidos antes de poder pedir producción. Confirma las cifras vigentes en Play Console. Crea la pista *Pruebas cerradas*, sube el .aab, añade los correos de los testers y comparte el enlace de aceptación.
-7. **Producción:** pasados los 14 días, *Producción → Crear versión* con el mismo .aab (o uno nuevo) → *Revisar* → *Enviar a revisión*. La primera revisión puede tardar hasta unos días.
-8. **Actualizaciones futuras:** sube un .aab con `versionCode` mayor (105, 106…) firmado con la misma llave.
+## 5. Pasos para subir
+1. Play Console → **Luna player → Prueba y publicación → Pruebas → Pruebas cerradas (Alpha) → Crear versión** (o *Editar versión* si quedó el borrador de la 2.7.2 sin enviar: quítale el .aab viejo).
+2. Sube `LunaPlayer-2.9.0-play.aab`. Debe decir *2.9.0 (244)*.
+3. Nombre de la versión: `2.9.0`. Pega las notas de la sección 2.
+4. **Siguiente → Guardar**. Revisa que no queden errores en rojo (las advertencias amarillas no bloquean).
+5. Actualiza la ficha (sección 3) y las capturas si quieres, y guarda.
+6. **Resumen de publicación → Enviar cambios a revisión** (lo envías tú cuando lo decidas).
 
-## 5. Cosas a tener en cuenta
-- `com.lunaplayer.app` es un paquete **distinto** del anterior (`com.melodia.app`): se instala como app aparte y **no hereda** listas, me gusta ni ajustes. El nombre de paquete no se puede cambiar una vez publicada.
-- Guarda siempre la carpeta de la llave. Si la pierdes, con Play App Signing puedes pedir a Google un restablecimiento de la llave de subida.
-- Target API: Play exige apuntar a Android 16 (API 36) desde el 31 de agosto de 2026; el proyecto ya lo hace.
+## 6. Lo que falta para producción (cuenta personal)
+- **12 testers** como mínimo con la prueba cerrada aceptada (hoy tienes 4) durante **14 días seguidos**. El contador empieza cuando hay 12.
+- Después: **Panel → Solicitar acceso a producción**, responder el cuestionario sobre la prueba y, al aprobarse, promover la 2.9.0 (o la versión que toque) a Producción.
+- Cada nueva subida necesita `versionCode` mayor (la siguiente será 245).
