@@ -323,6 +323,8 @@ fun PlayerScreen(
         mutableStateOf(song?.let { com.melodia.app.data.LyricsRepository.offset(context, it) } ?: 0L)
     }
     var timelineTop by remember { mutableStateOf(-1f) }
+    // Centro del círculo de las letras (fracción del reproductor); se lee al dibujar.
+    val revealFrac = remember { floatArrayOf(0.5f, 0.35f) }
 
     // Fondo: el color principal del álbum (ajustado para que el texto se lea).
     // La transición de color se lee solo al dibujar (drawBehind): no recompone nada por cuadro.
@@ -411,6 +413,36 @@ fun PlayerScreen(
                         )
                     }
             )
+            // Velo oscuro de las letras: va dentro de la "hoja", así baja y se encoge con ella al
+            // minimizar (todo lo que se minimiza queda igual de oscuro, sin franjas ni bordes).
+            // Al activarlas nace del centro de la carátula y crece en círculo con borde difuso.
+            if (lyricsRaw > 0.001f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawBehind {
+                            val dark = (0.36f + 0.22f * lyricsExpand) * (p / 0.35f).coerceIn(0f, 1f)
+                            if (lyricsRaw >= 0.999f) {
+                                drawRect(Color.Black.copy(alpha = dark))
+                            } else {
+                                val c = Offset(revealFrac[0] * size.width, revealFrac[1] * size.height)
+                                val edge = 90.dp.toPx()
+                                val rMax = maxOf(
+                                    kotlin.math.hypot(c.x, c.y), kotlin.math.hypot(size.width - c.x, c.y),
+                                    kotlin.math.hypot(c.x, size.height - c.y), kotlin.math.hypot(size.width - c.x, size.height - c.y)
+                                )
+                                val r = (lyricsRaw * (rMax + edge)).coerceAtLeast(1f)
+                                val inner = ((r - edge) / r).coerceIn(0f, 0.999f)
+                                drawRect(
+                                    Brush.radialGradient(
+                                        0f to Color.Black.copy(alpha = dark), inner to Color.Black.copy(alpha = dark),
+                                        1f to Color.Transparent, center = c, radius = r
+                                    )
+                                )
+                            }
+                        }
+                )
+            }
             // Al llegar a la barra toma el mismo tono que el mini-reproductor.
             if (sheet != null && p < 0.5f) {
                 Box(
@@ -850,6 +882,8 @@ fun PlayerScreen(
                     val dy = coverRect.center.y - target.center.y
                     val reveal = lyricsRaw
                     val rc = target.center
+                    revealFrac[0] = rc.x / rootSize.width.coerceAtLeast(1)
+                    revealFrac[1] = rc.y / rootSize.height.coerceAtLeast(1)
                     val rMax = maxOf(
                         kotlin.math.hypot(rc.x, rc.y),
                         kotlin.math.hypot(rootSize.width - rc.x, rc.y),
@@ -870,8 +904,6 @@ fun PlayerScreen(
                                 )
                             }
                             .drawWithContent {
-                                // Velo: oscurece todo el reproductor para que la letra destaque.
-                                drawRect(Color.Black.copy(alpha = 0.34f + 0.22f * lyricsExpand))
                                 drawContent()
                                 if (reveal < 0.999f) {
                                     val r = (reveal * (rMax + edge)).coerceAtLeast(1f)
