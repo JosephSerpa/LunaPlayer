@@ -281,7 +281,9 @@ fun PlayerScreen(
     var lyricsFull by rememberSaveable { mutableStateOf(false) }
     if (!lyricsOn && lyricsFull) lyricsFull = false
     BackHandler(enabled = lyricsFull && panel == 0) { lyricsFull = false }
-    val lyricsShown = lyricsOn && !closing && !hideCover
+    // No depende de "closing": al minimizar, las letras se van con el propio movimiento (openK);
+    // si se apagaran antes, la carátula reaparecería nítida volando como un cuadro.
+    val lyricsShown = lyricsOn && !hideCover
     val lyricsRaw by androidx.compose.animation.core.animateFloatAsState(
         if (lyricsShown) 1f else 0f,
         tween(460, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsOn"
@@ -294,6 +296,9 @@ fun PlayerScreen(
     // continua (nunca de golpe ni mientras la carátula vuela como un cuadro).
     val openK = ((progress - 0.35f) / 0.65f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
     val lyricsAnim = lyricsRaw * openK
+    // La carátula se disuelve del todo con las letras (y antes, en la primera mitad del vuelo
+    // desde el mini-reproductor), así nunca se ve su contorno cuadrado.
+    val coverK = lyricsRaw * ((progress - 0.05f) / 0.45f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
     var treeVersion by remember { mutableStateOf(0) }
     val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
@@ -809,9 +814,10 @@ fun PlayerScreen(
                     // Con letras, la carátula se difumina un poco detrás de ellas.
                     // La capa ocupa todo el reproductor: el difuminado nunca se corta en un cuadro.
                     Box(Modifier.fillMaxSize().graphicsLayer {
-                        val k = lyricsAnim * lyricsAnim * (3f - 2f * lyricsAnim)
-                        alpha = 1f - 0.4f * k
-                        val b = (22.dp.toPx() + 10.dp.toPx() * lyricsExpand) * k
+                        // Primero se desenfoca (rápido, para borrar los bordes) y luego se desvanece.
+                        val k = coverK
+                        alpha = (1f - k).let { it * it }
+                        val b = 34.dp.toPx() * kotlin.math.sqrt(k)
                         renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && b > 0.5f)
                             androidx.compose.ui.graphics.BlurEffect(b, b, androidx.compose.ui.graphics.TileMode.Decal)
                         else null
