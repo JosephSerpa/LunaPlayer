@@ -277,7 +277,7 @@
     <string name="srv_sync_user_error">Could not sync; will retry.</string>
     <string name="srv_sync_user_help">Stores your playlists, likes and star ratings for the server\'s music on your server and keeps them identical on all your devices. Music that is only on the phone is not synced. The first time it is turned on, this device\'s data is merged with the server\'s without deleting anything.</string>
     <string name="backup_title">Backup</string>
-    <string name="backup_help">Saves your likes, stars, playlists, plays, equalizer, widgets and settings to a file. With it you can restore everything after reinstalling or move it to another device. Songs are recognised by title, artist and length, so it works on another phone too. Server and Last.fm credentials are not included.</string>
+    <string name="backup_help">Saves your likes, stars, playlists, plays and history, hidden items, equalizer, effects, DAP mode, widgets and settings to a file. With it you can restore everything after reinstalling or move it to another device. Songs are recognised by title, artist and length, so it works on another phone too. For safety it never includes passwords or server and Last.fm credentials.</string>
     <string name="backup_export">Export everything</string>
     <string name="backup_export_sub">Creates a file with your data and settings</string>
     <string name="backup_import">Import backup</string>
@@ -286,7 +286,7 @@
     <string name="backup_error">Could not save: %s</string>
     <string name="backup_bad_file">That file is not a Luna player backup.</string>
     <string name="backup_import_q">Import this backup?</string>
-    <string name="backup_import_warn">Likes, stars and playlists from the file are merged with yours (playlists with the same name are joined). Equalizer, widgets and settings are replaced by the file\'s. The app will restart when done.</string>
+    <string name="backup_import_warn">Likes, stars, playlists, plays and hidden items from the file are merged with yours (playlists with the same name are joined). Equalizer, effects, DAP mode, widgets and settings are replaced by the file\'s. The app will restart when done.</string>
     <string name="backup_import_go">Import</string>
     <string name="backup_imported">Backup imported: %1$d of %2$d songs found. Restarting…</string>
     <string name="lfm_title">Last.fm</string>
@@ -478,4 +478,23 @@
     <string name="dap_sub_on">On: audio goes out unprocessed</string>
     <string name="dap_sub_off">Off: effects available</string>
     <string name="dap_notice">DAP mode is on: this effect is paused. Turn it off in Settings → Sound.</string>
+    <string name="hide_song">Hide song</string>
+    <string name="hide_album">Hide album</string>
+    <string name="hide_artist">Hide artist</string>
+    <string name="hide_folder">Hide folder</string>
+    <string name="toast_hidden">Hidden. You can show it again in Settings → Hidden.</string>
+    <string name="hidden_title">Hidden</string>
+    <string name="hidden_none">Nothing hidden</string>
+    <string name="hidden_empty">You haven\'t hidden anything. Long-press a song, album, artist or folder and choose \"Hide\" to remove it from your library.</string>
+    <string name="hidden_show">Show</string>
+    <string name="hidden_show_all">Show all</string>
+    <string name="hidden_show_all_q">Show everything that is hidden again?</string>
+    <string name="hidden_folders">Folders</string>
+    <string name="hidden_artists">Artists</string>
+    <string name="hidden_albums">Albums</string>
+    <string name="hidden_songs">Songs</string>
+    <plurals name="hidden_count">
+        <item quantity="one">%d hidden item</item>
+        <item quantity="other">%d hidden items</item>
+    </plurals>
 </resources>

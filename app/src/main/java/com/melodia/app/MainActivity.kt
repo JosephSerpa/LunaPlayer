@@ -695,6 +695,7 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                             onOpenLastFm = { nav.navigate("options/lastfm") { launchSingleTop = true } },
                             onOpenLicenses = { nav.navigate("options/licenses") { launchSingleTop = true } },
                             onOpenChangelog = { nav.navigate("options/changelog") { launchSingleTop = true } },
+                            onOpenHidden = { nav.navigate("options/hidden") { launchSingleTop = true } },
                             onBack = { nav.popBackStack() }
                         )
                     }
@@ -715,6 +716,9 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     }
                     composable("options/changelog") {
                         com.melodia.app.ui.options.ChangelogScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("options/hidden") {
+                        com.melodia.app.ui.options.HiddenScreen(store = app.hidden, onBack = { nav.popBackStack() })
                     }
                     composable("options/licenses") {
                         com.melodia.app.ui.options.LicensesScreen(onBack = { nav.popBackStack() })
@@ -945,7 +949,8 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onDismiss = { menuSong = null; menuPlaylist = null },
                     pinned = homeTiles.any { it.kind == com.melodia.app.data.TileKind.SONG && it.ref == song.id.toString() },
                     onTogglePin = { togglePin(com.melodia.app.data.TileKind.SONG, song.id.toString()) },
-                    onEdit = if (!song.isRemote) ({ editSong = song }) else null
+                    onEdit = if (!song.isRemote) ({ editSong = song }) else null,
+                    onHide = { app.hidden.hide(com.melodia.app.data.HiddenStore.songItem(song)); toast(R.string.toast_hidden) }
                 )
             }
             menuCollection?.let { target ->
@@ -964,7 +969,8 @@ private fun MelodiaRoot(openPlayerRequests: StateFlow<Int>) {
                     onTogglePin = target.pin?.let { p -> { togglePin(p.kind, p.ref) } },
                     albumMark = target.albumId?.let { albumMarks[it] },
                     onAlbumLike = target.albumId?.let { id -> { app.favorites.toggleAlbumLike(id) } },
-                    onAlbumRate = target.albumId?.let { id -> { n: Int -> app.favorites.setAlbumRating(id, n) } }
+                    onAlbumRate = target.albumId?.let { id -> { n: Int -> app.favorites.setAlbumRating(id, n) } },
+                    onHide = target.hide?.let { h -> { app.hidden.hide(h); toast(R.string.toast_hidden) } }
                 )
             }
             if (queueActive) {

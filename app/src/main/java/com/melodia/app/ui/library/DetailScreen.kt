@@ -209,7 +209,7 @@ fun DetailScreen(
                         Column(
                             Modifier.width(140.dp).pressableWithLongClick(
                                 collectionMenu?.let { m ->
-                                    { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ALBUM, album.id.toString()), album.id)) }
+                                    { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ALBUM, album.id.toString()), album.id, com.melodia.app.data.HiddenStore.albumItem(album))) }
                                 }
                             ) { onAlbum(album.id) }
                         ) {

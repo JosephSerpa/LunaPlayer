@@ -277,7 +277,7 @@
     <string name="srv_sync_user_error">No se pudo sincronizar; se reintentará.</string>
     <string name="srv_sync_user_help">Guarda en tu servidor tus listas de reproducción, los me gusta y las estrellas de la música del servidor, y los iguala en todos tus dispositivos. La música que está solo en el teléfono no se sincroniza. Al activarlo por primera vez se juntan los datos de este dispositivo con los del servidor, sin borrar nada.</string>
     <string name="backup_title">Copia de seguridad</string>
-    <string name="backup_help">Guarda en un archivo tus me gusta, estrellas, listas, reproducciones, ecualizador, widgets y ajustes. Con ese archivo puedes recuperarlo todo al reinstalar la app o pasarlo a otro dispositivo. Las canciones se reconocen por título, artista y duración, así que funciona aunque sea otro teléfono. No guarda los datos del servidor ni de Last.fm.</string>
+    <string name="backup_help">Guarda en un archivo tus me gusta, estrellas, listas, reproducciones e historial, lo que ocultaste, el ecualizador, los efectos, el modo DAP, los widgets y los ajustes. Con ese archivo puedes recuperarlo todo al reinstalar la app o pasarlo a otro dispositivo. Las canciones se reconocen por título, artista y duración, así que funciona aunque sea otro teléfono. Por seguridad no guarda contraseñas ni datos de conexión del servidor o de Last.fm.</string>
     <string name="backup_export">Exportar todo</string>
     <string name="backup_export_sub">Crea un archivo con tus datos y ajustes</string>
     <string name="backup_import">Importar copia</string>
@@ -286,7 +286,7 @@
     <string name="backup_error">No se pudo guardar: %s</string>
     <string name="backup_bad_file">Ese archivo no es una copia de Luna player.</string>
     <string name="backup_import_q">¿Importar esta copia?</string>
-    <string name="backup_import_warn">Los me gusta, estrellas y listas del archivo se juntan con los que ya tienes (las listas con el mismo nombre se unen). El ecualizador, los widgets y los ajustes se reemplazan por los del archivo. La app se reiniciará al terminar.</string>
+    <string name="backup_import_warn">Los me gusta, estrellas, listas, reproducciones y ocultos del archivo se juntan con los que ya tienes (las listas con el mismo nombre se unen). El ecualizador, los efectos, el modo DAP, los widgets y los ajustes se reemplazan por los del archivo. La app se reiniciará al terminar.</string>
     <string name="backup_import_go">Importar</string>
     <string name="backup_imported">Copia importada: %1$d de %2$d canciones encontradas. Reiniciando…</string>
     <string name="lfm_title">Last.fm</string>
@@ -478,4 +478,23 @@
     <string name="dap_sub_on">Activo: el audio sale sin procesar</string>
     <string name="dap_sub_off">Apagado: efectos disponibles</string>
     <string name="dap_notice">Modo DAP activo: este efecto está en pausa. Apágalo en Ajustes → Sonido.</string>
+    <string name="hide_song">Ocultar canción</string>
+    <string name="hide_album">Ocultar álbum</string>
+    <string name="hide_artist">Ocultar artista</string>
+    <string name="hide_folder">Ocultar carpeta</string>
+    <string name="toast_hidden">Oculto. Puedes volver a mostrarlo en Ajustes → Ocultos.</string>
+    <string name="hidden_title">Ocultos</string>
+    <string name="hidden_none">Nada oculto</string>
+    <string name="hidden_empty">No has ocultado nada. Mantén presionada una canción, álbum, artista o carpeta y elige \"Ocultar\" para que deje de aparecer en la biblioteca.</string>
+    <string name="hidden_show">Mostrar</string>
+    <string name="hidden_show_all">Mostrar todo</string>
+    <string name="hidden_show_all_q">¿Volver a mostrar todo lo oculto?</string>
+    <string name="hidden_folders">Carpetas</string>
+    <string name="hidden_artists">Artistas</string>
+    <string name="hidden_albums">Álbumes</string>
+    <string name="hidden_songs">Canciones</string>
+    <plurals name="hidden_count">
+        <item quantity="one">%d elemento oculto</item>
+        <item quantity="other">%d elementos ocultos</item>
+    </plurals>
 </resources>

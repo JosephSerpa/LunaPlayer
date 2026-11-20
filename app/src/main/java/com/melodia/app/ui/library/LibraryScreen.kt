@@ -485,7 +485,7 @@ private fun ArtistGrid(artists: List<Artist>, onArtist: (String) -> Unit) {
                 Column(
                     Modifier.fillMaxWidth().pressableWithLongClick(
                         collectionMenu?.let { m ->
-                            { m(CollectionTarget(artist.name, Str.plural(R.plurals.songs_count, artist.songs.size), artist.artUri, artist.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ARTIST, artist.name))) }
+                            { m(CollectionTarget(artist.name, Str.plural(R.plurals.songs_count, artist.songs.size), artist.artUri, artist.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ARTIST, artist.name), hide = com.melodia.app.data.HiddenStore.artistItem(artist.name))) }
                         }
                     ) { onArtist(artist.name) },
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -552,7 +552,7 @@ private fun AlbumGrid(
                         .padding(top = if (n > 1 && (index % n) % 2 == 1) 26.dp else 0.dp)
                         .pressableWithLongClick(
                             collectionMenu?.let { m ->
-                                { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ALBUM, album.id.toString()), album.id)) }
+                                { m(CollectionTarget(album.title, album.artist, album.artUri, album.songs, com.melodia.app.data.HomePin(com.melodia.app.data.TileKind.ALBUM, album.id.toString()), album.id, com.melodia.app.data.HiddenStore.albumItem(album))) }
                             }
                         ) { onAlbum(album.id) }
                 ) {
@@ -695,7 +695,7 @@ private fun FolderList(
                         .fillMaxWidth()
                         .pressableWithLongClick(
                             collectionMenu?.let { m ->
-                                { m(CollectionTarget(folder.name, folder.displayPath, folder.artUri, folder.songs)) }
+                                { m(CollectionTarget(folder.name, folder.displayPath, folder.artUri, folder.songs, hide = com.melodia.app.data.HiddenStore.folderItem(folder))) }
                             }
                         ) { onFolder(folder.id) }
                         .glass(shape, fill = 0.07f, border = 0.08f)

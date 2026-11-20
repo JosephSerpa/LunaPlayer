@@ -31,6 +31,19 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
+        "2.9.0",
+        listOf(
+            "Ocultar canciones, álbumes, artistas y carpetas: mantenlos presionados y elige \"Ocultar\". Dejan de aparecer en la biblioteca, Inicio, búsquedas y mezclas, sin borrar nada.",
+            "Nuevo apartado Ajustes → Ocultos para ver todo lo oculto y volver a mostrarlo (uno por uno o todo).",
+            "La copia de seguridad ahora también guarda lo oculto, el historial de escuchas y el modo DAP. Nunca incluye contraseñas ni datos de conexión."
+        ),
+        listOf(
+            "Hide songs, albums, artists and folders: long-press them and choose \"Hide\". They disappear from the library, Home, search and shuffles, without deleting anything.",
+            "New Settings → Hidden section to see everything hidden and show it again (one by one or all at once).",
+            "Backups now also include hidden items, listening history and DAP mode. They never include passwords or connection details."
+        )
+    ),
+    Release(
         "2.8.1",
         listOf(
             "Notificación del ecualizador global siempre visible en la barra de estado; solo se quita con la ✕ (que también lo apaga).",

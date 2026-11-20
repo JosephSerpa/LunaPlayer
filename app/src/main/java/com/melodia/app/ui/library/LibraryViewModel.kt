@@ -62,6 +62,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private var remote: List<Song> = emptyList()
 
     init {
+        // Al ocultar o volver a mostrar algo, la biblioteca se recalcula.
+        viewModelScope.launch {
+            melodia.hidden.items.drop(1).collect { if (_state.value.loaded) publish(syncing = _state.value.serverSyncing, error = _state.value.serverError) }
+        }
         // Si cambia la conexión al servidor, se vuelve a sincronizar.
         viewModelScope.launch {
             server.config.drop(1).distinctUntilChanged().collect { reload(forceServer = true) }
@@ -162,10 +166,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     // Con qué listas se calculó lo publicado: si no cambiaron, solo se actualiza el aviso de sincronización.
     private var publishedLocal: List<Song>? = null
     private var publishedRemote: List<Song>? = null
+    private var publishedHidden: Any? = null
 
     private suspend fun publish(syncing: Boolean, error: String? = null) {
         val prev = _state.value
-        if (prev.loaded && publishedLocal === local && publishedRemote === remote) {
+        val hidden = melodia.hidden.items.value
+        if (prev.loaded && publishedLocal === local && publishedRemote === remote && publishedHidden === hidden) {
             _state.value = prev.copy(loading = false, serverSyncing = syncing, serverError = error, serverSongs = remote.size)
             return
         }
@@ -173,7 +179,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         val r = remote
         // Ordenar miles de canciones se hace fuera del hilo de la interfaz, con la clave calculada una vez.
         val all = withContext(Dispatchers.Default) {
-            (l + r).map { it.title.lowercase() to it }.sortedBy { it.first }.map { it.second }
+            com.melodia.app.data.HiddenStore.filter(l + r, hidden).map { it.title.lowercase() to it }.sortedBy { it.first }.map { it.second }
         }
         val grouped = withContext(Dispatchers.Default) {
             Triple(repo.groupAlbums(all), repo.groupArtists(all), repo.groupFolders(all))
@@ -196,6 +202,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         )
         publishedLocal = l
         publishedRemote = r
+        publishedHidden = hidden
     }
 
     private companion object {

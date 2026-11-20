@@ -58,6 +58,9 @@ class MelodiaApp : Application(), ImageLoaderFactory {
     /** Distribución de la pantalla de inicio. */
     val home: com.melodia.app.data.HomeLayoutStore by lazy { com.melodia.app.data.HomeLayoutStore(this) }
 
+    /** Canciones, álbumes, artistas y carpetas ocultos. */
+    val hidden: com.melodia.app.data.HiddenStore by lazy { com.melodia.app.data.HiddenStore(this) }
+
     /** Me gusta y estrellas. */
     val favorites: FavoritesStore by lazy { FavoritesStore(this) }
 

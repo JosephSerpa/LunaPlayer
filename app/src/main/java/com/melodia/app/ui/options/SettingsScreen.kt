@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -56,6 +57,7 @@ fun SettingsScreen(
     onOpenLicenses: () -> Unit,
     onOpenChangelog: () -> Unit,
     onOpenLastFm: () -> Unit,
+    onOpenHidden: () -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -111,6 +113,16 @@ fun SettingsScreen(
             statusColor = if (server.isActive && library.serverError != null) ErrorRed else null,
             onClick = onOpenServer
         )
+        run {
+            val hiddenStore = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.melodia.app.MelodiaApp).hidden
+            val hidden by hiddenStore.items.collectAsState()
+            SettingsLink(
+                icon = Icons.Rounded.VisibilityOff,
+                title = Str.get(R.string.hidden_title),
+                subtitle = if (hidden.isEmpty()) Str.get(R.string.hidden_none) else Str.plural(R.plurals.hidden_count, hidden.size),
+                onClick = onOpenHidden
+            )
+        }
 
         // --- Copia de seguridad ---
         BackupSection(library)

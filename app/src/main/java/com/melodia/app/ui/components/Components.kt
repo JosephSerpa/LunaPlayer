@@ -118,7 +118,9 @@ data class CollectionTarget(
     /** Qué fijar en Inicio desde su menú (álbum o artista); null si no se puede fijar. */
     val pin: com.melodia.app.data.HomePin? = null,
     /** Si es un álbum: su id, para mostrar "me gusta" y estrellas en el menú. */
-    val albumId: Long? = null
+    val albumId: Long? = null,
+    /** Qué ocultar de la biblioteca desde su menú; null si no se puede ocultar (listas). */
+    val hide: com.melodia.app.data.HiddenItem? = null
 )
 
 /** Abre el menú de un álbum / artista / carpeta / lista al mantenerlo presionado. */

@@ -326,7 +326,7 @@ object PlayerWidget {
             val tag = ServerSettings.md5("${cfg.url}|${cfg.user}|${cfg.token}|${cfg.maxBitRate}")
             ServerDb.get(app).read(tag).orEmpty()
         } else emptyList()
-        local + remote
+        app.hidden.apply(local + remote)
     }.getOrDefault(emptyList())
 
     // --- Guardado del último estado (para dibujar el widget tras reiniciar) ---

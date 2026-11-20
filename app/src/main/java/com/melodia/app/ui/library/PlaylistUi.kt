@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -191,7 +192,9 @@ fun SongMenuDialog(
     pinned: Boolean = false,
     onTogglePin: (() -> Unit)? = null,
     /** Editar título, artista, álbum y género (solo canciones del teléfono). */
-    onEdit: (() -> Unit)? = null
+    onEdit: (() -> Unit)? = null,
+    /** Ocultar la canción de la biblioteca (se vuelve a mostrar desde Ajustes → Ocultos). */
+    onHide: (() -> Unit)? = null
 ) {
     var creating by remember { mutableStateOf(false) }
     if (creating) {
@@ -231,6 +234,9 @@ fun SongMenuDialog(
         }
         if (onEdit != null) {
             MenuRow(Icons.Rounded.Edit, Str.get(R.string.edit_song)) { onEdit(); onDismiss() }
+        }
+        if (onHide != null) {
+            MenuRow(Icons.Rounded.VisibilityOff, Str.get(R.string.hide_song)) { onHide(); onDismiss() }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
@@ -305,7 +311,9 @@ fun CollectionMenuDialog(
     onTogglePin: (() -> Unit)? = null,
     albumMark: com.melodia.app.data.SongMark? = null,
     onAlbumLike: (() -> Unit)? = null,
-    onAlbumRate: ((Int) -> Unit)? = null
+    onAlbumRate: ((Int) -> Unit)? = null,
+    /** Ocultar el álbum, artista o carpeta de la biblioteca. */
+    onHide: (() -> Unit)? = null
 ) {
     var creating by remember { mutableStateOf(false) }
     if (creating) {
@@ -343,6 +351,15 @@ fun CollectionMenuDialog(
             MenuRow(Icons.Rounded.PushPin, Str.get(if (pinned) R.string.unpin_home else R.string.pin_home)) {
                 onTogglePin(); onDismiss()
             }
+        }
+        if (onHide != null && target.hide != null) {
+            val label = when (target.hide.type) {
+                com.melodia.app.data.HiddenType.ALBUM -> R.string.hide_album
+                com.melodia.app.data.HiddenType.ARTIST -> R.string.hide_artist
+                com.melodia.app.data.HiddenType.FOLDER -> R.string.hide_folder
+                com.melodia.app.data.HiddenType.SONG -> R.string.hide_song
+            }
+            MenuRow(Icons.Rounded.VisibilityOff, Str.get(label)) { onHide(); onDismiss() }
         }
         MenuRow(Icons.Rounded.Add, Str.get(R.string.new_playlist)) { creating = true }
         if (playlists.isNotEmpty()) {

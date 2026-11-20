@@ -12,7 +12,8 @@ import java.text.Normalizer
 
 /**
  * Copia de seguridad "todo en uno" en un archivo .json: me gusta, estrellas, mejor parte, listas,
- * reproducciones, ecualizador (con perfiles y dispositivos), efectos, widgets de inicio y ajustes.
+ * reproducciones e historial, elementos ocultos, ecualizador (con perfiles y dispositivos), efectos,
+ * modo DAP, widgets de inicio y ajustes.
  *
  * Las canciones del teléfono tienen un número distinto en cada dispositivo (y tras reinstalar), así que
  * en el archivo cada canción va con una clave estable: título + artista + álbum + duración. Al importar
@@ -23,16 +24,16 @@ import java.text.Normalizer
 object Backup {
 
     private const val FORMAT = "lunaplayer-backup"
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     /** Archivos de ajustes que se copian tal cual. */
-    private val PLAIN_PREFS = listOf("equalizer", "effects", "ui", "language")
+    private val PLAIN_PREFS = listOf("equalizer", "effects", "ui", "language", "dap")
 
     data class Result(val songs: Int, val matched: Int, val playlists: Int)
 
     // ------------------------------------------------------------------ claves estables
 
-    private fun norm(s: String): String =
+    internal fun norm(s: String): String =
         Normalizer.normalize(s.lowercase().trim(), Normalizer.Form.NFD)
             .replace(Regex("\\p{Mn}+"), "")
             .replace(Regex("\\s+"), " ")
@@ -110,6 +111,17 @@ object Backup {
             stats.put(JSONObject().put("k", k).put("n", c.first).put("t", c.second))
         }
         root.put("stats", stats)
+
+        // Historial de escuchas (para "esta semana", rachas y recientes)
+        val history = JSONArray()
+        for ((id, at) in readLog(context)) {
+            val k = ref(id) ?: continue
+            history.put(JSONArray().put(k).put(at))
+        }
+        root.put("history", history)
+
+        // Ocultos (ya van con claves estables)
+        root.put("hidden", JSONArray(HiddenStore.encode(HiddenStore(context).items.value)))
 
         // Widgets de inicio (las canciones y álbumes fijados van por clave)
         val albums = songs.groupBy { it.albumId }.mapValues { (_, l) -> albumKey(l.first().album, l.first().artist) }
@@ -225,6 +237,26 @@ object Backup {
         }
         writeStats(context, stats)
 
+        // Historial: se juntan ambos sin repetir la misma escucha.
+        root.optJSONArray("history")?.let { h ->
+            val events = LinkedHashSet(readLog(context))
+            for (i in 0 until h.length()) {
+                val e = h.optJSONArray(i) ?: continue
+                val id = find(e.optString(0)) ?: continue
+                events += id to e.optLong(1)
+            }
+            writeLog(context, events.sortedBy { it.second }.takeLast(LOG_MAX))
+        }
+
+        // Ocultos: se suman a los que ya hay.
+        root.optJSONArray("hidden")?.let { h ->
+            val prefs = context.getSharedPreferences(HiddenStore.PREFS, Context.MODE_PRIVATE)
+            val cur = HiddenStore.decode(prefs.getString(HiddenStore.KEY, null))
+            val have = cur.map { it.type to it.key }.toHashSet()
+            val add = HiddenStore.decode(h.toString()).filter { (it.type to it.key) !in have }
+            prefs.edit().putString(HiddenStore.KEY, HiddenStore.encode(cur + add)).commit()
+        }
+
         // Widgets de inicio
         root.optJSONObject("home")?.let { h ->
             val albumIds = songs.groupBy { it.albumId }.entries.associate { (id, l) -> albumKey(l.first().album, l.first().artist) to id }
@@ -307,6 +339,29 @@ object Backup {
             buildMap { repeat(n) { put(i.readLong(), i.readInt() to i.readLong()) } }
         }
     }.getOrDefault(emptyMap())
+
+    // Mismo formato que el historial de PlayStats (play_log.bin).
+    private const val LOG_MAX = 30_000
+
+    private fun readLog(context: Context): List<Pair<Long, Long>> = runCatching {
+        val f = File(context.filesDir, "play_log.bin")
+        if (!f.exists()) return emptyList()
+        DataInputStream(f.inputStream().buffered()).use { i ->
+            if (i.readInt() != 1) return emptyList()
+            val n = i.readInt()
+            List(n) { i.readLong() to i.readLong() }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun writeLog(context: Context, list: List<Pair<Long, Long>>) {
+        val f = File(context.filesDir, "play_log.bin")
+        val tmp = File(context.filesDir, "play_log.bin.tmp")
+        DataOutputStream(tmp.outputStream().buffered()).use { o ->
+            o.writeInt(1); o.writeInt(list.size)
+            for ((id, at) in list) { o.writeLong(id); o.writeLong(at) }
+        }
+        tmp.renameTo(f)
+    }
 
     private fun writeStats(context: Context, m: Map<Long, Pair<Int, Long>>) {
         val f = File(context.filesDir, "play_stats.bin")
