@@ -28,7 +28,9 @@ class MusicRepository(private val resolver: ContentResolver) {
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.YEAR,
-            if (withGenre) MediaStore.Audio.Media.GENRE else null
+            MediaStore.Audio.Media.TRACK,
+            if (withGenre) MediaStore.Audio.Media.GENRE else null,
+            if (withGenre) MediaStore.Audio.Media.DISC_NUMBER else null
         ).toTypedArray()
         val selection =
             "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 30000"
@@ -48,6 +50,8 @@ class MusicRepository(private val resolver: ContentResolver) {
             val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val genreCol = if (withGenre) c.getColumnIndex(MediaStore.Audio.Media.GENRE) else -1
             val yearCol = c.getColumnIndex(MediaStore.Audio.Media.YEAR)
+            val trackCol = c.getColumnIndex(MediaStore.Audio.Media.TRACK)
+            val discCol = if (withGenre) c.getColumnIndex(MediaStore.Audio.Media.DISC_NUMBER) else -1
 
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
@@ -66,11 +70,26 @@ class MusicRepository(private val resolver: ContentResolver) {
                     path = c.getString(dataCol).orEmpty(),
                     sizeBytes = c.getLong(sizeCol),
                     genre = if (genreCol >= 0) c.getString(genreCol)?.trim().orEmpty() else "",
-                    year = if (yearCol >= 0) c.getInt(yearCol).let { y -> if (y in 1000..2999) y else 0 } else 0
+                    year = if (yearCol >= 0) c.getInt(yearCol).let { y -> if (y in 1000..2999) y else 0 } else 0,
+                    track = trackOf(
+                        if (trackCol >= 0) c.getInt(trackCol) else 0,
+                        if (discCol >= 0) c.getString(discCol) else null
+                    )
                 )
             }
         }
         songs
+    }
+
+    /**
+     * Android guarda la pista como "disco × 1000 + pista" (1003 = disco 1, pista 3) o solo la pista;
+     * en Android 11+ el disco también viene aparte ("2" o "2/3").
+     */
+    private fun trackOf(raw: Int, discRaw: String?): Int {
+        if (raw <= 0) return 0
+        if (raw >= 1000) return trackOrder(raw / 1000, raw % 1000)
+        val disc = discRaw?.trim()?.substringBefore('/')?.trim()?.toIntOrNull() ?: 1
+        return trackOrder(disc, raw)
     }
 
     private fun normalizeArtist(raw: String?): String {
@@ -89,7 +108,7 @@ class MusicRepository(private val resolver: ContentResolver) {
                     title = first.album,
                     artist = list.groupingBy { it.artist }.eachCount().maxBy { it.value }.key,
                     artUri = first.artUri,
-                    songs = list
+                    songs = list.sortedWith(AlbumOrder)
                 )
             }
             .sortedBy { it.title.lowercase() }
@@ -117,7 +136,8 @@ class MusicRepository(private val resolver: ContentResolver) {
                     name = folderPath.substringAfterLast('/').ifBlank { Str.get(R.string.no_folder) },
                     displayPath = prettyPath(folderPath),
                     artUri = list.firstOrNull()?.artUri,
-                    songs = list.sortedBy { it.title.lowercase() }
+                    // Dentro de una carpeta: por álbum y en el orden real de cada álbum.
+                    songs = list.sortedWith(compareBy<Song> { it.album.lowercase() }.then(AlbumOrder))
                 )
             }
             .sortedBy { it.name.lowercase() }

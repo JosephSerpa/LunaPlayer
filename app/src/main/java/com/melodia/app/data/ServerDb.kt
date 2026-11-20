@@ -28,13 +28,21 @@ class ServerDb private constructor(context: Context) : SQLiteOpenHelper(context,
                 id INTEGER PRIMARY KEY, remote_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL,
                 album TEXT NOT NULL, album_id INTEGER NOT NULL, duration_ms INTEGER NOT NULL,
                 uri TEXT NOT NULL, art_uri TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL,
-                sort_key TEXT NOT NULL, hash INTEGER NOT NULL, genre TEXT NOT NULL DEFAULT '', year INTEGER NOT NULL DEFAULT 0)"""
+                sort_key TEXT NOT NULL, hash INTEGER NOT NULL, genre TEXT NOT NULL DEFAULT '', year INTEGER NOT NULL DEFAULT 0, track INTEGER NOT NULL DEFAULT 0)"""
         )
         db.execSQL("CREATE INDEX songs_sort ON songs(sort_key)")
         db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion == 4 && newVersion == 5) {
+            // Versión 5: número de pista y disco. Se agrega la columna y se borra la huella para que la
+            // próxima revisión vuelva a pedir la lista al servidor (la biblioteca se sigue viendo mientras).
+            db.execSQL("ALTER TABLE songs ADD COLUMN track INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("UPDATE songs SET hash=0")
+            db.execSQL("DELETE FROM meta WHERE k IN ('fingerprint','checked_at')")
+            return
+        }
         if (oldVersion == 3 && newVersion == 4) {
             // Versión 4: las direcciones se guardan sin credenciales. Se limpian las que había,
             // sin volver a bajar nada (la cola y la biblioteca siguen igual).
@@ -81,7 +89,7 @@ class ServerDb private constructor(context: Context) : SQLiteOpenHelper(context,
         if (meta(db, "tag") != tag) return null
         val out = ArrayList<Song>()
         db.rawQuery(
-            "SELECT id,remote_id,title,artist,album,album_id,duration_ms,uri,art_uri,path,size,genre,year FROM songs", null
+            "SELECT id,remote_id,title,artist,album,album_id,duration_ms,uri,art_uri,path,size,genre,year,track FROM songs", null
         ).use { c ->
             while (c.moveToNext()) {
                 out += Song(
@@ -89,14 +97,14 @@ class ServerDb private constructor(context: Context) : SQLiteOpenHelper(context,
                     artist = c.getString(3), album = c.getString(4), albumId = c.getLong(5),
                     durationMs = c.getLong(6), uri = Uri.parse(c.getString(7)),
                     artUri = Uri.parse(c.getString(8)), path = c.getString(9), sizeBytes = c.getLong(10),
-                    genre = c.getString(11).orEmpty(), year = c.getInt(12)
+                    genre = c.getString(11).orEmpty(), year = c.getInt(12), track = c.getInt(13)
                 )
             }
         }
         out
     }.getOrNull()
 
-    private fun hashOf(s: Song) = "${s.title}|${s.artist}|${s.album}|${s.albumId}|${s.durationMs}|${s.uri}|${s.artUri}|${s.path}|${s.sizeBytes}|${s.genre}|${s.year}".hashCode().toLong()
+    private fun hashOf(s: Song) = "${s.title}|${s.artist}|${s.album}|${s.albumId}|${s.durationMs}|${s.uri}|${s.artUri}|${s.path}|${s.sizeBytes}|${s.genre}|${s.year}|${s.track}".hashCode().toLong()
 
     /** Aplica solo las diferencias con lo que ya había (añadidas, quitadas y modificadas). */
     fun sync(songs: List<Song>, tag: String, fingerprint: String): Diff {
@@ -121,7 +129,7 @@ class ServerDb private constructor(context: Context) : SQLiteOpenHelper(context,
                 cv.put("artist", s.artist); cv.put("album", s.album); cv.put("album_id", s.albumId)
                 cv.put("duration_ms", s.durationMs); cv.put("uri", s.uri.toString())
                 cv.put("art_uri", s.artUri.toString()); cv.put("path", s.path); cv.put("size", s.sizeBytes)
-                cv.put("sort_key", SearchKeys.norm(s.title)); cv.put("hash", h); cv.put("genre", s.genre); cv.put("year", s.year)
+                cv.put("sort_key", SearchKeys.norm(s.title)); cv.put("hash", h); cv.put("genre", s.genre); cv.put("year", s.year); cv.put("track", s.track)
                 db.insertWithOnConflict("songs", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
                 if (prev == null) added++ else changed++
             }
@@ -154,7 +162,7 @@ class ServerDb private constructor(context: Context) : SQLiteOpenHelper(context,
     }
 
     companion object {
-        private const val VERSION = 4
+        private const val VERSION = 5
 
         @Volatile private var instance: ServerDb? = null
 

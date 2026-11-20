@@ -20,7 +20,9 @@ data class Song(
     /** Género (etiqueta del archivo o del servidor); vacío si no se conoce. */
     val genre: String = "",
     /** Año del disco (0 si no se conoce). */
-    val year: Int = 0
+    val year: Int = 0,
+    /** Orden dentro del álbum según sus metadatos: disco × 1000 + pista (0 si no tiene). */
+    val track: Int = 0
 ) {
     val isRemote: Boolean get() = remoteId != null
 }
@@ -48,6 +50,13 @@ data class Folder(
     val artUri: Uri?,
     val songs: List<Song>
 )
+
+/** Número de disco y pista a una sola clave de orden (disco 1 si no se indica). */
+fun trackOrder(disc: Int, track: Int): Int =
+    if (track <= 0) 0 else (disc.coerceIn(1, 999)) * 1000 + (track % 1000)
+
+/** Orden real de un álbum: disco y pista; las canciones sin número van al final, por título. */
+val AlbumOrder: Comparator<Song> = compareBy<Song>({ if (it.track > 0) it.track else Int.MAX_VALUE }, { it.title.lowercase() })
 
 val UNKNOWN_ARTIST: String get() = Str.get(R.string.unknown_artist)
 val UNKNOWN_ALBUM: String get() = Str.get(R.string.unknown_album)

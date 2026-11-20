@@ -387,7 +387,8 @@ object SubsonicClient {
             sizeBytes = if (transcoded) 0L else o.optLong("size"),
             remoteId = id,
             genre = o.optString("genre").trim(),
-            year = o.optInt("year").let { y -> if (y in 1000..2999) y else 0 }
+            year = o.optInt("year").let { y -> if (y in 1000..2999) y else 0 },
+            track = com.melodia.app.data.trackOrder(o.optInt("discNumber", 1), o.optInt("track"))
         )
     }
 

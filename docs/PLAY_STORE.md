@@ -1,38 +1,38 @@
-# Luna player 2.9.0 — Kit para subir a Google Play
+# Luna player 2.9.1 — Kit para subir a Google Play
 
-Paquete `com.lunaplayer.app` · **Versión 2.9.0 (código 244)** · Min. Android 8.0 · Target Android 16 (API 36)
+Paquete `com.lunaplayer.app` · **Versión 2.9.1 (código 245)** · Min. Android 8.0 · Target Android 16 (API 36)
 Preparado el 2026-11-20. Fuente de cambios: `CHANGELOG.md`.
 
 ## 1. Archivos
 | Qué | Dónde (en `Documents\Luna player`) |
 |---|---|
-| App Bundle para Play | `entregables\LunaPlayer-2.9.0-play.aab` (firmado con tu llave de subida, SHA-1 `d1f3aaa5…ba14`) |
-| APK para GitHub / testers sin Play | `entregables\LunaPlayer-2.9.0.apk` |
+| App Bundle para Play | `entregables\LunaPlayer-2.9.1-play.aab` (firmado con tu llave de subida, SHA-1 `d1f3aaa5…ba14`) |
+| APK para GitHub / testers sin Play | `entregables\LunaPlayer-2.9.1.apk` |
 | Icono 512×512 | `play-store\icon-512.png` |
 | Gráfico de función 1024×500 | `play-store\feature-graphic.png` (EN: `capturas\en-feature-graphic.png`) |
 | Capturas | `play-store\capturas\` (5 en español, 5 en inglés) |
 | Política de privacidad | https://github.com/JosephSerpa/LunaPlayer/blob/main/PRIVACY.md |
 
 ## 2. Notas de la versión (pégalas tal cual en "Notas de la versión")
-Máximo 500 caracteres por idioma (ES: 454, EN: 403).
+Máximo 500 caracteres por idioma (ES: 454, EN: 406).
 
 ```
 <es-419>
 • Ocultar canciones, álbumes, artistas y carpetas (Ajustes → Ocultos para revertirlo).
+• Álbumes en su orden real (disco y pista).
 • Copia de seguridad completa: listas, me gusta, historial, ecualizador, ocultos y ajustes, sin contraseñas.
 • Modo DAP bit-perfect: el audio sale sin procesar hacia el DAC.
 • Música del servidor con menos cortes y saltos más rápidos.
 • Onda del reproductor mucho más rápida.
-• Notificación fija del ecualizador global.
 • Mezclar toda la biblioteca sin límite de 400.
 </es-419>
 <en-US>
 • Hide songs, albums, artists and folders (Settings → Hidden to undo).
+• Albums in their real order (disc and track).
 • Full backup: playlists, likes, history, equalizer, hidden items and settings, no passwords.
 • Bit-perfect DAP mode: audio goes unprocessed to the DAC.
 • Server music with fewer dropouts and faster seeking.
 • Much faster player waveform.
-• Persistent global equalizer notification.
 • Shuffle the whole library with no 400-song cap.
 </en-US>
 ```
@@ -121,13 +121,13 @@ Made with love for music. If you like it, you can buy me a coffee on Ko-fi.
 
 ## 5. Pasos para subir
 1. Play Console → **Luna player → Prueba y publicación → Pruebas → Pruebas cerradas (Alpha) → Crear versión** (o *Editar versión* si quedó el borrador de la 2.7.2 sin enviar: quítale el .aab viejo).
-2. Sube `LunaPlayer-2.9.0-play.aab`. Debe decir *2.9.0 (244)*.
-3. Nombre de la versión: `2.9.0`. Pega las notas de la sección 2.
+2. Sube `LunaPlayer-2.9.1-play.aab`. Debe decir *2.9.1 (245)*.
+3. Nombre de la versión: `2.9.1`. Pega las notas de la sección 2.
 4. **Siguiente → Guardar**. Revisa que no queden errores en rojo (las advertencias amarillas no bloquean).
 5. Actualiza la ficha (sección 3) y las capturas si quieres, y guarda.
 6. **Resumen de publicación → Enviar cambios a revisión** (lo envías tú cuando lo decidas).
 
 ## 6. Lo que falta para producción (cuenta personal)
 - **12 testers** como mínimo con la prueba cerrada aceptada (hoy tienes 4) durante **14 días seguidos**. El contador empieza cuando hay 12.
-- Después: **Panel → Solicitar acceso a producción**, responder el cuestionario sobre la prueba y, al aprobarse, promover la 2.9.0 (o la versión que toque) a Producción.
-- Cada nueva subida necesita `versionCode` mayor (la siguiente será 245).
+- Después: **Panel → Solicitar acceso a producción**, responder el cuestionario sobre la prueba y, al aprobarse, promover la 2.9.1 (o la versión que toque) a Producción.
+- Cada nueva subida necesita `versionCode` mayor (la siguiente será 246).
