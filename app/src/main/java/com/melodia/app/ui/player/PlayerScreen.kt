@@ -803,8 +803,11 @@ fun PlayerScreen(
                 if (progress >= 0.999f) origin.playerCover = coverRect.translate(boxPos)
                 if (!hideCover) {
                     // Con letras, la carátula se difumina un poco detrás de ellas.
-                    Box(Modifier.graphicsLayer {
-                        val b = (14.dp.toPx() + 10.dp.toPx() * lyricsExpand) * lyricsAnim
+                    // La capa ocupa todo el reproductor: el difuminado nunca se corta en un cuadro.
+                    Box(Modifier.fillMaxSize().graphicsLayer {
+                        val k = lyricsAnim * lyricsAnim * (3f - 2f * lyricsAnim)
+                        alpha = 1f - 0.2f * k
+                        val b = (14.dp.toPx() + 10.dp.toPx() * lyricsExpand) * k
                         renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && b > 0.5f)
                             androidx.compose.ui.graphics.BlurEffect(b, b, androidx.compose.ui.graphics.TileMode.Decal)
                         else null
@@ -1032,57 +1035,56 @@ private fun Timeline(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val style = MaterialTheme.typography.labelMedium
             val c = MaterialTheme.colorScheme.onSurfaceVariant
-            // Mitades de igual ancho: al cambiar los números del tiempo, la luna no se mueve.
+            // Tiempos a los lados; la luna y las letras juntas, centradas en medio.
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 Text(positionMs.formatTime(), style = style, color = c, maxLines = 1)
             }
-            // "La mejor parte": solo un icono de luna. Tocar salta ahí (o la marca si no hay);
-            // mantener presionado la mueve al punto actual; la "x" pequeña la borra.
-            val hasBest = bestMs >= 0
-            Box {
-                Box(
-                    Modifier
-                        .size(width = 56.dp, height = 42.dp)
-                        .pressableWithLongClick(onLongClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onSetBest(positionMs)
-                        }) {
-                            if (hasBest) onSeek(bestMs)
-                            else {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onSetBest(positionMs)
-                            }
-                        }
-                        .then(
-                            if (hasBest) Modifier.background(accent.copy(alpha = 0.18f), RoundedCornerShape(50))
-                            else Modifier.glass(RoundedCornerShape(50), fill = 0.07f, border = 0.12f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        MoonIcon,
-                        if (hasBest) Str.get(R.string.best_go) else Str.get(R.string.best_mark),
-                        tint = if (hasBest) accent else ink.copy(alpha = 0.75f),
-                        modifier = Modifier.size(30.dp)
-                    )
-                }
-                if (hasBest) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // "La mejor parte": solo un icono de luna. Tocar salta ahí (o la marca si no hay);
+                // mantener presionado la mueve al punto actual; la "x" pequeña la borra.
+                val hasBest = bestMs >= 0
+                Box {
                     Box(
                         Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 4.dp, y = (-4).dp)
-                            .size(20.dp)
-                            .pressable(onClearBest)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape),
+                            .size(width = 56.dp, height = 42.dp)
+                            .pressableWithLongClick(onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSetBest(positionMs)
+                            }) {
+                                if (hasBest) onSeek(bestMs)
+                                else {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onSetBest(positionMs)
+                                }
+                            }
+                            .then(
+                                if (hasBest) Modifier.background(accent.copy(alpha = 0.18f), RoundedCornerShape(50))
+                                else Modifier.glass(RoundedCornerShape(50), fill = 0.07f, border = 0.12f)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Rounded.Close, Str.get(R.string.best_remove), tint = Color.White, modifier = Modifier.size(12.dp))
+                        Icon(
+                            MoonIcon,
+                            if (hasBest) Str.get(R.string.best_go) else Str.get(R.string.best_mark),
+                            tint = if (hasBest) accent else ink.copy(alpha = 0.75f),
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    if (hasBest) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 4.dp, y = (-4).dp)
+                                .size(20.dp)
+                                .pressable(onClearBest)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Close, Str.get(R.string.best_remove), tint = Color.White, modifier = Modifier.size(12.dp))
+                        }
                     }
                 }
-            }
-            // A la derecha de la luna: letras (misma forma que la luna).
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(16.dp))
                 Box(
                     Modifier
                         .size(width = 56.dp, height = 42.dp)
@@ -1100,7 +1102,8 @@ private fun Timeline(
                         modifier = Modifier.size(26.dp)
                     )
                 }
-                Spacer(Modifier.weight(1f))
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 Text(durationMs.formatTime(), style = style, color = c, maxLines = 1)
             }
         }

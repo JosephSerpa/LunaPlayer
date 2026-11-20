@@ -31,20 +31,22 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
-        "2.10.0 – 2.10.1",
+        "2.10.0 – 2.10.2",
         listOf(
             "Letras: nuevo botón junto a la luna. La letra aparece sobre la carátula, sigue a la canción sola y la línea actual crece mientras suena; el resto del reproductor se atenúa.",
             "Toca una línea para saltar a ese momento. Si deslizas, el seguimiento se pausa y vuelve solo a los 3 s.",
             "Letra completa: amplía la letra hasta la línea de tiempo, con ajuste fino de ±0,5 s por canción.",
             "Lee archivos .lrc junto a la canción, la letra guardada dentro del archivo (MP3, FLAC, M4A) y la de Navidrome.",
-            "Las letras flotan sin recuadro: una sombra suave sin bordes y la carátula se difumina detrás. Al ampliarlas, todo el reproductor se oscurece un poco."
+            "Las letras flotan sin recuadro: una sombra suave sin bordes y la carátula se difumina detrás. Al ampliarlas, todo el reproductor se oscurece un poco.",
+            "Transición de las letras más suave (sin cuadros) y botones de luna y letras centrados juntos bajo la onda."
         ),
         listOf(
             "Lyrics: new button next to the moon. Lyrics appear over the artwork, follow the song by themselves and the current line grows as it plays; the rest of the player dims.",
             "Tap a line to jump there. If you scroll, following pauses and comes back after 3 s.",
             "Full lyrics: expands the lyrics down to the timeline, with ±0.5 s fine-tuning per song.",
             "Reads .lrc files next to the song, lyrics stored inside the file (MP3, FLAC, M4A) and Navidrome lyrics.",
-            "Lyrics float with no box: a soft edgeless shadow and the artwork blurs behind them. When expanded, the whole player dims slightly."
+            "Lyrics float with no box: a soft edgeless shadow and the artwork blurs behind them. When expanded, the whole player dims slightly.",
+            "Smoother lyrics transition (no boxes) and moon and lyrics buttons centred together under the waveform."
         )
     ),
     Release(
