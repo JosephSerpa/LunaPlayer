@@ -31,7 +31,7 @@ private class Release(val version: String, val es: List<String>, val en: List<St
 
 private val RELEASES = listOf(
     Release(
-        "2.10.0 – 2.10.4",
+        "2.10.0 – 2.10.5",
         listOf(
             "Letras: nuevo botón junto a la luna. La letra aparece sobre la carátula, sigue a la canción sola y la línea actual crece mientras suena; el resto del reproductor se atenúa.",
             "Toca una línea para saltar a ese momento. Si deslizas, el seguimiento se pausa y vuelve solo a los 3 s.",
@@ -40,7 +40,8 @@ private val RELEASES = listOf(
             "Las letras flotan sin recuadro: una sombra suave sin bordes y la carátula se difumina detrás. Al ampliarlas, todo el reproductor se oscurece un poco.",
             "Transición de las letras más suave (sin cuadros) y botones de luna y letras centrados juntos bajo la onda.",
             "Al abrir o cerrar el reproductor con las letras activas, la carátula y las letras aparecen y se van poco a poco con él, sin cuadros ni cortes.",
-            "Con letras, la carátula se disuelve por completo (primero se desenfoca y luego se desvanece), también al minimizar el reproductor: ya no queda un cuadro flotando."
+            "Con letras, la carátula se disuelve por completo (primero se desenfoca y luego se desvanece), también al minimizar el reproductor: ya no queda un cuadro flotando.",
+            "Nueva animación de las letras: nacen de un punto en el centro de la carátula y se expanden en círculo, con borde difuso, hasta llenar el reproductor. Al minimizar, bajan con la carátula y se desvanecen con el resto."
         ),
         listOf(
             "Lyrics: new button next to the moon. Lyrics appear over the artwork, follow the song by themselves and the current line grows as it plays; the rest of the player dims.",
@@ -50,7 +51,8 @@ private val RELEASES = listOf(
             "Lyrics float with no box: a soft edgeless shadow and the artwork blurs behind them. When expanded, the whole player dims slightly.",
             "Smoother lyrics transition (no boxes) and moon and lyrics buttons centred together under the waveform.",
             "Opening or closing the player with lyrics on, the artwork and lyrics fade in and out gradually with it, with no boxes or cuts.",
-            "With lyrics on, the artwork fully dissolves (first blurs, then fades), also when minimizing the player: no more floating box."
+            "With lyrics on, the artwork fully dissolves (first blurs, then fades), also when minimizing the player: no more floating box.",
+            "New lyrics animation: they grow from a point in the centre of the artwork in a soft-edged circle until they fill the player. When minimizing, they move down with the artwork and fade with the rest."
         )
     ),
     Release(

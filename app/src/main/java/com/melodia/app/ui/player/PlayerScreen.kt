@@ -286,7 +286,8 @@ fun PlayerScreen(
     val lyricsShown = lyricsOn && !hideCover
     val lyricsRaw by androidx.compose.animation.core.animateFloatAsState(
         if (lyricsShown) 1f else 0f,
-        tween(460, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsOn"
+        // Aparición desde un punto: un círculo que crece desde el centro de la carátula.
+        tween(720, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsOn"
     )
     val lyricsExpand by androidx.compose.animation.core.animateFloatAsState(
         if (lyricsFull && lyricsShown) 1f else 0f,
@@ -298,7 +299,8 @@ fun PlayerScreen(
     val lyricsAnim = lyricsRaw * openK
     // La carátula se disuelve del todo con las letras (y antes, en la primera mitad del vuelo
     // desde el mini-reproductor), así nunca se ve su contorno cuadrado.
-    val coverK = lyricsRaw * ((progress - 0.05f) / 0.45f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+    // La carátula se difumina mientras el círculo la cruza, y vuelve a enfocarse al minimizar.
+    val coverK = (lyricsRaw / 0.45f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) } * openK
     var treeVersion by remember { mutableStateOf(0) }
     val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
@@ -409,15 +411,6 @@ fun PlayerScreen(
                         )
                     }
             )
-            // Con las letras abiertas, el fondo se oscurece un poco para que destaquen.
-            if (lyricsAnim > 0.001f) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = lyricsAnim }
-                        .background(Color.Black.copy(alpha = 0.26f + 0.2f * lyricsExpand))
-                )
-            }
             // Al llegar a la barra toma el mismo tono que el mini-reproductor.
             if (sheet != null && p < 0.5f) {
                 Box(
@@ -468,7 +461,7 @@ fun PlayerScreen(
                     else null
                 }
                 // Con las letras abiertas, lo demás se atenúa (la línea de tiempo y los controles no).
-                val dimmed = appear.graphicsLayer { alpha = (1f - 0.45f * lyricsAnim - 0.55f * lyricsExpand).coerceAtLeast(0f) }
+                val dimmed = appear.graphicsLayer { alpha = (1f - 0.75f * lyricsExpand * lyricsAnim).coerceAtLeast(0f) }
 
                 // --- Barra superior ---
                 Row(
@@ -816,8 +809,8 @@ fun PlayerScreen(
                     Box(Modifier.fillMaxSize().graphicsLayer {
                         // Primero se desenfoca (rápido, para borrar los bordes) y luego se desvanece.
                         val k = coverK
-                        alpha = (1f - k).let { it * it }
-                        val b = 34.dp.toPx() * kotlin.math.sqrt(k)
+                        alpha = 1f - 0.3f * k
+                        val b = 26.dp.toPx() * k
                         renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && b > 0.5f)
                             androidx.compose.ui.graphics.BlurEffect(b, b, androidx.compose.ui.graphics.TileMode.Decal)
                         else null
@@ -835,7 +828,7 @@ fun PlayerScreen(
                     }
                 }
                 // --- Letras: sobre la carátula o, al ampliarlas, hasta la línea de tiempo ---
-                if (!hideCover && lyricsAnim > 0.01f && rootSize.width > 0) {
+                if (!hideCover && lyricsRaw > 0.001f && openK > 0.001f && rootSize.width > 0) {
                     val padPx = with(density) { 14.dp.toPx() }
                     val topPx = androidx.compose.foundation.layout.WindowInsets.systemBars.getTop(density) +
                         with(density) { 64.dp.toPx() }
@@ -847,32 +840,70 @@ fun PlayerScreen(
                         maxOf(bottomPx, topPx + target.height * 0.6f)
                     )
                     val base = target.translate(swipeX.value * (1f - lyricsExpand), 0f)
-                    // Letra completa: todo el reproductor se oscurece un poco (no bloquea los toques).
-                    if (lyricsExpand > 0.001f) {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .graphicsLayer { alpha = lyricsExpand * lyricsAnim }
-                                .background(Color.Black.copy(alpha = 0.32f))
+                    // Todo lo de las letras (velo oscuro + letra) en una sola capa:
+                    //  · al activarlas nace de un punto en el centro de la carátula y se expande en
+                    //    círculo, con borde difuso, hasta cubrir el reproductor;
+                    //  · al minimizar baja y se encoge junto con la carátula y se desvanece con el resto.
+                    val openW = target.width * 1.1f + with(density) { 52.dp.toPx() }
+                    val follow = (coverRect.width / openW).coerceIn(0.05f, 1f)
+                    val dx = coverRect.center.x - target.center.x
+                    val dy = coverRect.center.y - target.center.y
+                    val reveal = lyricsRaw
+                    val rc = target.center
+                    val rMax = maxOf(
+                        kotlin.math.hypot(rc.x, rc.y),
+                        kotlin.math.hypot(rootSize.width - rc.x, rc.y),
+                        kotlin.math.hypot(rc.x, rootSize.height - rc.y),
+                        kotlin.math.hypot(rootSize.width - rc.x, rootSize.height - rc.y)
+                    )
+                    val edge = with(density) { 90.dp.toPx() }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                compositingStrategy = CompositingStrategy.Offscreen
+                                alpha = contentAlpha * openK
+                                translationX = dx; translationY = dy
+                                scaleX = follow; scaleY = follow
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                    rc.x / rootSize.width.coerceAtLeast(1), rc.y / rootSize.height.coerceAtLeast(1)
+                                )
+                            }
+                            .drawWithContent {
+                                // Velo: oscurece todo el reproductor para que la letra destaque.
+                                drawRect(Color.Black.copy(alpha = 0.34f + 0.22f * lyricsExpand))
+                                drawContent()
+                                if (reveal < 0.999f) {
+                                    val r = (reveal * (rMax + edge)).coerceAtLeast(1f)
+                                    val inner = ((r - edge) / r).coerceIn(0f, 0.999f)
+                                    drawRect(
+                                        Brush.radialGradient(
+                                            0f to Color.Black, inner to Color.Black, 1f to Color.Transparent,
+                                            center = rc, radius = r
+                                        ),
+                                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn
+                                    )
+                                }
+                            }
+                    ) {
+                        LyricsPanel(
+                            ui = lyricsUi,
+                            position = position,
+                            isPlaying = state.isPlaying,
+                            rect = lerpRect(base, full, lyricsExpand),
+                            alpha = 1f,
+                            expand = lyricsExpand,
+                            shiftMs = lyricsShift,
+                            accent = accent,
+                            onSeek = onSeek,
+                            onToggleExpand = { lyricsFull = !lyricsFull },
+                            onShift = { ms ->
+                                lyricsShift = ms.coerceIn(-10_000L, 10_000L)
+                                song?.let { com.melodia.app.data.LyricsRepository.setOffset(context, it, lyricsShift) }
+                            },
+                            onPickFolder = { runCatching { treePicker.launch(null) } }
                         )
                     }
-                    LyricsPanel(
-                        ui = lyricsUi,
-                        position = position,
-                        isPlaying = state.isPlaying,
-                        rect = lerpRect(base, full, lyricsExpand),
-                        alpha = lyricsAnim * contentAlpha,
-                        expand = lyricsExpand,
-                        shiftMs = lyricsShift,
-                        accent = accent,
-                        onSeek = onSeek,
-                        onToggleExpand = { lyricsFull = !lyricsFull },
-                        onShift = { ms ->
-                            lyricsShift = ms.coerceIn(-10_000L, 10_000L)
-                            song?.let { com.melodia.app.data.LyricsRepository.setOffset(context, it, lyricsShift) }
-                        },
-                        onPickFolder = { runCatching { treePicker.launch(null) } }
-                    )
                 }
             }
 
