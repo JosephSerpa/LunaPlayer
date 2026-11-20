@@ -50,7 +50,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -131,22 +134,30 @@ fun LyricsPanel(
     val density = LocalDensity.current
     val w = with(density) { rect.width.toDp() }
     val h = with(density) { rect.height.toDp() }
-    val radius = (22f * (1f - expand)).dp
     Box(
         Modifier
             .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
             .size(w, h)
             .graphicsLayer { this.alpha = alpha }
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.52f + 0.18f * expand),
-                        Color.Black.copy(alpha = 0.42f + 0.22f * expand),
-                        Color.Black.copy(alpha = 0.56f + 0.18f * expand)
+            // Sombra suave sin bordes: un óvalo oscuro que se desvanece más allá de la carátula,
+            // así la letra parece flotar sobre todo el reproductor.
+            .drawBehind {
+                val sx = size.width / size.height
+                val r = size.height * (0.78f + 0.12f * expand)
+                val core = 0.50f + 0.12f * expand
+                scale(scaleX = sx, scaleY = 1f, pivot = center) {
+                    drawCircle(
+                        Brush.radialGradient(
+                            0f to Color.Black.copy(alpha = core),
+                            0.55f to Color.Black.copy(alpha = core * 0.82f),
+                            0.8f to Color.Black.copy(alpha = core * 0.35f),
+                            1f to Color.Transparent,
+                            center = center, radius = r
+                        ),
+                        radius = r, center = center
                     )
-                ),
-                RoundedCornerShape(radius)
-            )
+                }
+            }
     ) {
         AnimatedContent(
             targetState = ui,
@@ -355,7 +366,7 @@ private fun LyricsList(
                     drawContent()
                     drawRect(
                         Brush.verticalGradient(
-                            0f to Color.Transparent, 0.16f to Color.Black, 0.84f to Color.Black, 1f to Color.Transparent
+                            0f to Color.Transparent, 0.22f to Color.Black, 0.78f to Color.Black, 1f to Color.Transparent
                         ),
                         blendMode = BlendMode.DstIn
                     )
@@ -383,6 +394,8 @@ private fun LyricsList(
                     lineHeight = baseSize * 1.25f,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
+                    // Sombra difusa: se lee sobre cualquier carátula sin necesitar un recuadro.
+                    style = androidx.compose.ui.text.TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.55f), blurRadius = 18f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = (7f + 3f * expand).dp)

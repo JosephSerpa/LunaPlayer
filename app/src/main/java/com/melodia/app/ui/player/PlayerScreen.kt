@@ -459,7 +459,7 @@ fun PlayerScreen(
                     else null
                 }
                 // Con las letras abiertas, lo demás se atenúa (la línea de tiempo y los controles no).
-                val dimmed = appear.graphicsLayer { alpha = 1f - 0.45f * lyricsAnim - 0.4f * lyricsExpand }
+                val dimmed = appear.graphicsLayer { alpha = (1f - 0.45f * lyricsAnim - 0.55f * lyricsExpand).coerceAtLeast(0f) }
 
                 // --- Barra superior ---
                 Row(
@@ -761,8 +761,9 @@ fun PlayerScreen(
                     Box(
                         Modifier
                             .then(appear)
+                            .graphicsLayer { alpha = 1f - lyricsAnim }
                             .size(44.dp)
-                            .pressable(onEdit)
+                            .pressable { if (!lyricsOn) onEdit() }
                             .glass(CircleShape, fill = 0.12f),
                         contentAlignment = Alignment.Center
                     ) {
@@ -801,7 +802,13 @@ fun PlayerScreen(
                 // la lleva desde ahí hasta su barra superior, como si fuera el mismo reproductor.
                 if (progress >= 0.999f) origin.playerCover = coverRect.translate(boxPos)
                 if (!hideCover) {
-                    Box {
+                    // Con letras, la carátula se difumina un poco detrás de ellas.
+                    Box(Modifier.graphicsLayer {
+                        val b = (14.dp.toPx() + 10.dp.toPx() * lyricsExpand) * lyricsAnim
+                        renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && b > 0.5f)
+                            androidx.compose.ui.graphics.BlurEffect(b, b, androidx.compose.ui.graphics.TileMode.Decal)
+                        else null
+                    }) {
                     FlyingCover(
                         artUri = current.artUri,
                         rect = coverRect,
@@ -827,6 +834,15 @@ fun PlayerScreen(
                         maxOf(bottomPx, topPx + target.height * 0.6f)
                     )
                     val base = target.translate(swipeX.value * (1f - lyricsExpand), 0f)
+                    // Letra completa: todo el reproductor se oscurece un poco (no bloquea los toques).
+                    if (lyricsExpand > 0.001f) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = lyricsExpand * lyricsAnim }
+                                .background(Color.Black.copy(alpha = 0.32f))
+                        )
+                    }
                     LyricsPanel(
                         ui = lyricsUi,
                         position = position,
