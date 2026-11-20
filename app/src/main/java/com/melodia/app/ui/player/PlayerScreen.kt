@@ -282,7 +282,7 @@ fun PlayerScreen(
     if (!lyricsOn && lyricsFull) lyricsFull = false
     BackHandler(enabled = lyricsFull && panel == 0) { lyricsFull = false }
     val lyricsShown = lyricsOn && !closing && !hideCover
-    val lyricsAnim by androidx.compose.animation.core.animateFloatAsState(
+    val lyricsRaw by androidx.compose.animation.core.animateFloatAsState(
         if (lyricsShown) 1f else 0f,
         tween(460, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsOn"
     )
@@ -290,6 +290,10 @@ fun PlayerScreen(
         if (lyricsFull && lyricsShown) 1f else 0f,
         tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "lyricsFull"
     )
+    // Las letras siguen al reproductor: al abrirlo o cerrarlo aparecen y se van con él, de forma
+    // continua (nunca de golpe ni mientras la carátula vuela como un cuadro).
+    val openK = ((progress - 0.35f) / 0.65f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+    val lyricsAnim = lyricsRaw * openK
     var treeVersion by remember { mutableStateOf(0) }
     val treePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
@@ -806,8 +810,8 @@ fun PlayerScreen(
                     // La capa ocupa todo el reproductor: el difuminado nunca se corta en un cuadro.
                     Box(Modifier.fillMaxSize().graphicsLayer {
                         val k = lyricsAnim * lyricsAnim * (3f - 2f * lyricsAnim)
-                        alpha = 1f - 0.2f * k
-                        val b = (14.dp.toPx() + 10.dp.toPx() * lyricsExpand) * k
+                        alpha = 1f - 0.4f * k
+                        val b = (22.dp.toPx() + 10.dp.toPx() * lyricsExpand) * k
                         renderEffect = if (android.os.Build.VERSION.SDK_INT >= 31 && b > 0.5f)
                             androidx.compose.ui.graphics.BlurEffect(b, b, androidx.compose.ui.graphics.TileMode.Decal)
                         else null
